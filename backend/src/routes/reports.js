@@ -25,7 +25,7 @@ function buildFrequencyMap(values = []) {
  */
 
   // ===== /api/reports/overview =====
-  router.get('/overview', (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
+  router.get('/overview', (req, res) => {
     try {
       const all = transcriptionService.listTranscriptionsWithMetadata();
 
@@ -34,31 +34,113 @@ function buildFrequencyMap(values = []) {
       const avgSizeBytes =
         totalTranscriptions > 0 ? totalSizeBytes / totalTranscriptions : 0;
 
-      // agregação por curso
+      // ---- total de discentes atendidos ----
+      const studentsSet = new Set(
+        all
+          .map((t) => t.metadata?.discenteId)
+          .filter(Boolean)
+      );
+      const totalStudents = studentsSet.size;
+
+      // ---- média de sentimentos (se existir) ----
+      let sentimentsAvg = null;
+      let sumPos = 0;
+      let sumNeu = 0;
+      let sumNeg = 0;
+      let countSent = 0;
+
+      for (const t of all) {
+        const s = t.analysis?.sentiments;
+        if (!s) continue;
+        sumPos += s.positive || 0;
+        sumNeu += s.neutral || 0;
+        sumNeg += s.negative || 0;
+        countSent++;
+      }
+
+      if (countSent > 0) {
+        sentimentsAvg = {
+          positive: sumPos / countSent,
+          neutral: sumNeu / countSent,
+          negative: sumNeg / countSent,
+        };
+      }
+
+      // ---- agregação por curso ----
       const byCourseMap = {};
+
       for (const t of all) {
         const course = t.metadata?.curso || 'Não informado';
+
         if (!byCourseMap[course]) {
           byCourseMap[course] = {
             course,
             count: 0,
+            distinctStudents: new Set(),
             lastTranscriptionAt: null,
           };
         }
-        byCourseMap[course].count += 1;
+
+        const entry = byCourseMap[course];
+        entry.count += 1;
+
+        if (t.metadata?.discenteId) {
+          entry.distinctStudents.add(t.metadata.discenteId);
+        }
 
         const createdAt = t.createdAt ? new Date(t.createdAt) : null;
         if (createdAt) {
-          const currentLast = byCourseMap[course].lastTranscriptionAt
-            ? new Date(byCourseMap[course].lastTranscriptionAt)
+          const currentLast = entry.lastTranscriptionAt
+            ? new Date(entry.lastTranscriptionAt)
             : null;
+
           if (!currentLast || createdAt > currentLast) {
-            byCourseMap[course].lastTranscriptionAt = createdAt.toISOString();
+            entry.lastTranscriptionAt = createdAt.toISOString();
           }
         }
       }
 
-      const byCourse = Object.values(byCourseMap);
+      const byCourse = Object.values(byCourseMap).map((c) => ({
+        course: c.course,
+        count: c.count,
+        distinctStudents: c.distinctStudents.size,
+        lastTranscriptionAt: c.lastTranscriptionAt,
+      }));
+
+      // ---- highlights (keywords + topics) ----
+      const allKeywords = [];
+      const allTopics = [];
+
+      for (const t of all) {
+        const a = t.analysis || {};
+
+        // keywords pode ser array de string ou algo próximo disso
+        if (Array.isArray(a.keywords)) {
+          a.keywords.forEach((k) => {
+            if (!k) return;
+            if (typeof k === 'string') {
+              allKeywords.push(k);
+            } else if (k.term || k.keyword || k.label) {
+              allKeywords.push(k.term || k.keyword || k.label);
+            }
+          });
+        }
+
+        // topics (ou similar) se existirem
+        if (Array.isArray(a.topics)) {
+          a.topics.forEach((topic) => {
+            if (!topic) return;
+            if (typeof topic === 'string') {
+              allTopics.push(topic);
+            } else if (topic.term || topic.topic || topic.label) {
+              allTopics.push(topic.term || topic.topic || topic.label);
+            }
+          });
+        }
+      }
+
+      const topKeywords = buildFrequencyMap(allKeywords).slice(0, 10);
+      const topTopics = buildFrequencyMap(allTopics).slice(0, 10);
 
       res.json({
         success: true,
@@ -66,14 +148,148 @@ function buildFrequencyMap(values = []) {
           totalTranscriptions,
           totalSizeBytes,
           avgSizeBytes,
+          totalStudents,
+          sentimentsAvg,
         },
         byCourse,
+        highlights: {
+          topKeywords,
+          topTopics,
+        },
       });
     } catch (error) {
       console.error('Erro no overview de relatórios:', error);
       res.status(500).json({
         success: false,
         message: 'Erro ao gerar overview de relatórios',
+        error: error.message,
+      });
+    }
+  });
+
+  // ===== /api/reports/by-course-details =====
+  // Detalha temas, sentimentos e alunos por curso
+  router.get('/by-course-details', (req, res) => {
+    try {
+      const { course: courseFilter } = req.query;
+      const all = transcriptionService.listTranscriptionsWithMetadata();
+
+      // agrupa por curso
+      const courseMap = new Map();
+
+      for (const t of all) {
+        const course = t.metadata?.curso || 'Não informado';
+
+        // se veio filtro de curso, aplica
+        if (courseFilter && course !== courseFilter) continue;
+
+        if (!courseMap.has(course)) {
+          courseMap.set(course, {
+            course,
+            transcriptions: [],
+          });
+        }
+        courseMap.get(course).transcriptions.push(t);
+      }
+
+      // monta resumo por curso
+      const courses = [];
+
+      for (const [course, data] of courseMap.entries()) {
+        const transcriptions = data.transcriptions;
+        const totalTranscriptions = transcriptions.length;
+
+        // discentes distintos
+        const studentsSet = new Set(
+          transcriptions
+            .map((t) => t.metadata?.discenteId)
+            .filter(Boolean)
+        );
+        const totalStudents = studentsSet.size;
+
+        // sentimentos médios
+        let sentimentsAvg = null;
+        let sumPos = 0;
+        let sumNeu = 0;
+        let sumNeg = 0;
+        let countSent = 0;
+
+        const allKeywords = [];
+        const allTopics = [];
+
+        for (const t of transcriptions) {
+          const a = t.analysis || {};
+
+          // sentimentos
+          if (a.sentiments) {
+            sumPos += a.sentiments.positive || 0;
+            sumNeu += a.sentiments.neutral || 0;
+            sumNeg += a.sentiments.negative || 0;
+            countSent++;
+          }
+
+          // keywords (array de string ou objetos)
+          if (Array.isArray(a.keywords)) {
+            a.keywords.forEach((k) => {
+              if (!k) return;
+              if (typeof k === 'string') {
+                allKeywords.push(k);
+              } else if (k.term || k.keyword || k.label) {
+                allKeywords.push(k.term || k.keyword || k.label);
+              }
+            });
+          }
+
+          // topics (array de string ou objetos)
+          if (Array.isArray(a.topics)) {
+            a.topics.forEach((topic) => {
+              if (!topic) return;
+              if (typeof topic === 'string') {
+                allTopics.push(topic);
+              } else if (topic.term || topic.topic || topic.label) {
+                allTopics.push(topic.term || topic.topic || topic.label);
+              }
+            });
+          }
+        }
+
+        if (countSent > 0) {
+          sentimentsAvg = {
+            positive: sumPos / countSent,
+            neutral: sumNeu / countSent,
+            negative: sumNeg / countSent,
+          };
+        }
+
+        // frequência de termos só naquele curso
+        const topKeywords = buildFrequencyMap(allKeywords).slice(0, 10);
+        const topTopics = buildFrequencyMap(allTopics).slice(0, 10);
+
+        courses.push({
+          course,
+          totalTranscriptions,
+          totalStudents,
+          sentimentsAvg,
+          topKeywords,
+          topTopics,
+        });
+      }
+
+      // ordena por quantidade de transcrições (maior primeiro)
+      courses.sort((a, b) => b.totalTranscriptions - a.totalTranscriptions);
+
+      res.json({
+        success: true,
+        data: {
+          totalCourses: courses.length,
+          courses,
+        },
+      });
+    } catch (error) {
+      console.error('Erro em /reports/by-course-details:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar detalhes por curso',
         error: error.message,
       });
     }
