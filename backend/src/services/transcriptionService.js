@@ -86,6 +86,7 @@ class TranscriptionService {
               {
                 text:
                   'Transcreva o áudio anexo em português brasileiro. ' +
+                  'Tente separar falantes diferentes quando possível.  ' +
                   'O resultado deve ser apenas o texto da transcrição, sem introduções ou comentários.',
               },
               {

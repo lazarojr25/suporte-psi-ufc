@@ -1,0 +1,49 @@
+{
+  "Maria_Monteiro_592674_20251210_sessao.txt": {
+    "fileName": "Maria_Monteiro_592674_20251210_sessao.txt",
+    "size": 4004,
+    "createdAt": "2025-12-10T22:38:39.492Z",
+    "metadata": {
+      "discenteId": "BVEUXUdOZFfPszkqRtAT",
+      "solicitacaoId": null,
+      "studentName": "Maria Monteiro",
+      "studentEmail": "ljrlopes8@gmail.com",
+      "studentId": "592674",
+      "curso": "Sistemas de Informação",
+      "sessionDate": "2025-12-10"
+    },
+    "analysis": {
+      "sentiments": {
+        "positive": 0.2,
+        "neutral": 0.3,
+        "negative": 0.5
+      },
+      "keywords": [
+        "Relacionamento",
+        "Coach",
+        "Reciprocidade",
+        "Jogo de gato e rato",
+        "Manipulação",
+        "Doação",
+        "Falta de estímulo",
+        "Bom senso",
+        "Maturidade",
+        "Achar alguém"
+      ],
+      "topics": [
+        "Crítica a Conselhos de Relacionamento",
+        "Dinâmica de Reciprocidade",
+        "Problemas da Doação Excessiva",
+        "A Busca por Parceiros Maduros",
+        "Estratégia vs. Esforço Genuíno"
+      ],
+      "summary": "O falante analisa um vídeo de coach que argumenta que a doação total em um relacionamento é negativa, pois acostuma o parceiro a apenas receber, faltando estímulo para a retribuição. No entanto, o falante critica essa abordagem, vendo-a como uma tática manipulativa que transforma o relacionamento em um \"jogo de gato e rato\", onde ambos esperam a ação do outro. Ele conclui que a solução não é jogar, mas sim procurar ativamente por alguém com maturidade e disposição para nivelar a relação através do esforço mútuo e honesto.",
+      "actionableInsights": [
+        "É crucial desenvolver conteúdos ou aconselhamentos que abordem a reciprocidade de forma madura, distanciando-se da visão de relacionamento como um \"jogo\" ou tática de manipulação.",
+        "O profissional deve explorar a dicotomia apresentada (jogar vs. procurar parceiros dispostos) para ajudar indivíduos a estabelecer limites saudáveis sem cair na tentação de estratégias manipulativas.",
+        "Observa-se que a dificuldade em 'achar uma pessoa boa' é o principal obstáculo percebido pelo falante; o foco pode ser direcionado para estratégias de seleção de parceiros e desenvolvimento de autoconfiança para evitar 'entrar no jogo'.",
+        "Recomenda-se analisar o conceito de 'falta de estímulo' apresentado pelo coach, para extrair o insight de que a ausência de limites claros e a doação excessiva podem, de fato, gerar complacência, buscando integrá-lo a uma ética de relacionamento baseada no respeito mútuo, e não na estratégia."
+      ]
+    }
+  }
+}
