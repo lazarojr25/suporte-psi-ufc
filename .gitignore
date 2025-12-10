@@ -1,0 +1,52 @@
+# Logs
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+
+# BACKEND (Node)       #
+
+
+# Dependências
+backend/node_modules/
+
+# Builds (caso gere)
+backend/dist/
+backend/build/
+
+# Arquivos de ambiente / segredos
+backend/.env
+backend/.env.local
+backend/.env.development
+backend/.env.production
+
+# Credenciais Firebase (NÃO subir isso!)
+*firebase-adminsdk*.json
+
+# Pastas de trabalho / runtime (não versionar)
+backend/uploads/
+backend/transcriptions/
+backend/work/
+
+
+# FRONTEND (Vite/React)#
+
+
+# Dependências
+frontend/node_modules/
+
+# Build do Vite
+frontend/dist/
+
+# Env do front (se existir)
+frontend/.env
+frontend/.env.local
+frontend/.env.development
+frontend/.env.production
