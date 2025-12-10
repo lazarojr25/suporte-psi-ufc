@@ -1,16 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { auth } from '../services/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
 
-export default function TopBar() {
-  const [user, setUser] = useState(null);
+export default function TopBar({ user }) {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
-    return () => unsub();
-  }, []);
 
   const handleLogout = async () => {
     try {
@@ -31,7 +25,9 @@ export default function TopBar() {
       <div className="max-w-6xl mx-auto px-4">
         <div className="h-14 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <span className="font-bold text-gray-900">Sistema de Apoio Psicologico</span>
+            <span className="font-bold text-gray-900">
+              Sistema de Apoio Psicológico
+            </span>
 
             <nav className="hidden sm:flex items-center gap-2">
               <NavLink
@@ -59,11 +55,11 @@ export default function TopBar() {
                 Relatórios
               </NavLink>
               <NavLink
-                  to="/config-atendimentos"
-                  className={({ isActive }) =>
-                    `${linkBase} ${isActive ? linkActive : linkInactive}`
-                  }
-                >
+                to="/config-atendimentos"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
                 Config. Atendimentos
               </NavLink>
             </nav>
@@ -75,16 +71,19 @@ export default function TopBar() {
                 {user.email}
               </span>
             )}
-            <button
-              onClick={handleLogout}
-              className="px-3 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
-            >
-              Sair
-            </button>
+
+            {user && (
+              <button
+                onClick={handleLogout}
+                className="px-3 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
+              >
+                Sair
+              </button>
+            )}
           </div>
         </div>
 
-        {/* navegação “mobile” simples, aparece abaixo no mobile */}
+        {/* navegação mobile */}
         <nav className="sm:hidden pb-3 flex gap-2">
           <NavLink
             to="/relatorios"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../services/firebase';
 import TopBar from '../components/TopBar';
 
 export default function PrivateLayout() {
@@ -9,7 +10,6 @@ export default function PrivateLayout() {
   const location = useLocation();
 
   useEffect(() => {
-    const auth = getAuth();
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       setAuthLoading(false);
@@ -26,13 +26,18 @@ export default function PrivateLayout() {
     );
   }
 
- // if (!user || user.isAnonymous) {
- //   return <Navigate to="/" replace state={{ from: location }} />;
- // }
 
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (user.isAnonymous) {
+    return <Navigate to="/" replace />;
+  }
+  
   return (
     <div className="min-h-screen bg-gray-100">
-      <TopBar />
+      <TopBar user={user} />
       <main className="max-w-6xl mx-auto px-4 py-6">
         <Outlet />
       </main>
