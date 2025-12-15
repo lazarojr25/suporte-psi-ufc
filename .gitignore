@@ -27,14 +27,17 @@ backend/.env.local
 backend/.env.development
 backend/.env.production
 
-# Credenciais Firebase (NÃO subir isso!)
+# Credenciais Firebase 
 *firebase-adminsdk*.json
 
 # Pastas de trabalho / runtime (não versionar)
 backend/uploads/
 backend/transcriptions/
 backend/work/
+uploads/
 
+# Credenciais específicas
+psico-suporte-ufc-firebase-adminsdk-fbsvc-d9d3495279.json
 
 # FRONTEND (Vite/React)#
 
