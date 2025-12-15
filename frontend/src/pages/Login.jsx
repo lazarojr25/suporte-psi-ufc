@@ -12,11 +12,14 @@ export default function Login() {
 
   // Se já está logado, manda para a área interna
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) navigate('/relatorios'); // ajuste a rota que quiser
-    });
-    return () => unsub();
-  }, [navigate]);
+  const unsub = onAuthStateChanged(auth, (u) => {
+    if (u && !u.isAnonymous) {
+      navigate('/relatorios');
+    }
+  });
+
+  return () => unsub();
+}, [navigate]);
 
   const mapError = (code) => {
     switch (code) {

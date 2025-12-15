@@ -1,5 +1,6 @@
 import TranscriptionService from '../services/transcriptionService.js';
 import express from 'express';
+import PDFDocument from 'pdfkit';
 
 const router = express.Router();
 
@@ -20,6 +21,173 @@ function buildFrequencyMap(values = []) {
     .map(([term, count]) => ({ term, count }));
 }
 
+const monthLabelFormatter = new Intl.DateTimeFormat('pt-BR', {
+  month: 'long',
+  year: 'numeric',
+});
+
+function computeOverviewData() {
+  const all = transcriptionService.listTranscriptionsWithMetadata();
+
+  const totalTranscriptions = all.length;
+  const totalSizeBytes = all.reduce((sum, t) => sum + (t.size || 0), 0);
+  const avgSizeBytes =
+    totalTranscriptions > 0 ? totalSizeBytes / totalTranscriptions : 0;
+
+  const studentsSet = new Set(
+    all
+      .map((t) => t.metadata?.discenteId)
+      .filter(Boolean)
+  );
+  const totalStudents = studentsSet.size;
+
+  let sentimentsAvg = null;
+  let sumPos = 0;
+  let sumNeu = 0;
+  let sumNeg = 0;
+  let countSent = 0;
+
+  for (const t of all) {
+    const s = t.analysis?.sentiments;
+    if (!s) continue;
+    sumPos += s.positive || 0;
+    sumNeu += s.neutral || 0;
+    sumNeg += s.negative || 0;
+    countSent++;
+  }
+
+  if (countSent > 0) {
+    sentimentsAvg = {
+      positive: sumPos / countSent,
+      neutral: sumNeu / countSent,
+      negative: sumNeg / countSent,
+    };
+  }
+
+  const byCourseMap = {};
+
+  for (const t of all) {
+    const course = t.metadata?.curso || 'Não informado';
+
+    if (!byCourseMap[course]) {
+      byCourseMap[course] = {
+        course,
+        count: 0,
+        distinctStudents: new Set(),
+        lastTranscriptionAt: null,
+      };
+    }
+
+    const entry = byCourseMap[course];
+    entry.count += 1;
+
+    if (t.metadata?.discenteId) {
+      entry.distinctStudents.add(t.metadata.discenteId);
+    }
+
+    const createdAt = t.createdAt ? new Date(t.createdAt) : null;
+    if (createdAt && !Number.isNaN(createdAt)) {
+      const currentLast = entry.lastTranscriptionAt
+        ? new Date(entry.lastTranscriptionAt)
+        : null;
+
+      if (!currentLast || createdAt > currentLast) {
+        entry.lastTranscriptionAt = createdAt.toISOString();
+      }
+    }
+  }
+
+  const byCourse = Object.values(byCourseMap)
+    .map((c) => ({
+      course: c.course,
+      count: c.count,
+      distinctStudents: c.distinctStudents.size,
+      lastTranscriptionAt: c.lastTranscriptionAt,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const allKeywords = [];
+  const allTopics = [];
+
+  for (const t of all) {
+    const a = t.analysis || {};
+
+    if (Array.isArray(a.keywords)) {
+      a.keywords.forEach((k) => {
+        if (!k) return;
+        if (typeof k === 'string') {
+          allKeywords.push(k);
+        } else if (k.term || k.keyword || k.label) {
+          allKeywords.push(k.term || k.keyword || k.label);
+        }
+      });
+    }
+
+    if (Array.isArray(a.topics)) {
+      a.topics.forEach((topic) => {
+        if (!topic) return;
+        if (typeof topic === 'string') {
+          allTopics.push(topic);
+        } else if (topic.term || topic.topic || topic.label) {
+          allTopics.push(topic.term || topic.topic || topic.label);
+        }
+      });
+    }
+  }
+
+  const topKeywords = buildFrequencyMap(allKeywords).slice(0, 10);
+  const topTopics = buildFrequencyMap(allTopics).slice(0, 10);
+
+  const timelineMap = new Map();
+  for (const t of all) {
+    if (!t.createdAt) continue;
+    const createdAt = new Date(t.createdAt);
+    if (Number.isNaN(createdAt)) continue;
+    const year = createdAt.getFullYear();
+    const monthIndex = createdAt.getMonth();
+    const periodKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+    if (!timelineMap.has(periodKey)) {
+      const monthDate = new Date(year, monthIndex, 1);
+      timelineMap.set(periodKey, {
+        period: periodKey,
+        periodLabel: monthLabelFormatter.format(monthDate),
+        count: 0,
+        sortValue: year * 100 + (monthIndex + 1),
+      });
+    }
+    timelineMap.get(periodKey).count += 1;
+  }
+
+  const timeline = Array.from(timelineMap.values())
+    .sort((a, b) => a.sortValue - b.sortValue)
+    .map(({ sortValue, ...rest }) => rest);
+
+  const periodWithMostRequests = timeline.reduce(
+    (max, current) => {
+      if (!max) return current;
+      return current.count > max.count ? current : max;
+    },
+    null
+  );
+
+  return {
+    overview: {
+      totalTranscriptions,
+      totalSizeBytes,
+      avgSizeBytes,
+      totalStudents,
+      sentimentsAvg,
+    },
+    byCourse,
+    highlights: {
+      topKeywords,
+      topTopics,
+    },
+    timeline,
+    periodWithMostRequests,
+  };
+}
+
 /**
  * Define as rotas de relatórios usando express.Router
  */
@@ -27,141 +195,214 @@ function buildFrequencyMap(values = []) {
   // ===== /api/reports/overview =====
   router.get('/overview', (req, res) => {
     try {
-      const all = transcriptionService.listTranscriptionsWithMetadata();
-
-      const totalTranscriptions = all.length;
-      const totalSizeBytes = all.reduce((sum, t) => sum + (t.size || 0), 0);
-      const avgSizeBytes =
-        totalTranscriptions > 0 ? totalSizeBytes / totalTranscriptions : 0;
-
-      // ---- total de discentes atendidos ----
-      const studentsSet = new Set(
-        all
-          .map((t) => t.metadata?.discenteId)
-          .filter(Boolean)
-      );
-      const totalStudents = studentsSet.size;
-
-      // ---- média de sentimentos (se existir) ----
-      let sentimentsAvg = null;
-      let sumPos = 0;
-      let sumNeu = 0;
-      let sumNeg = 0;
-      let countSent = 0;
-
-      for (const t of all) {
-        const s = t.analysis?.sentiments;
-        if (!s) continue;
-        sumPos += s.positive || 0;
-        sumNeu += s.neutral || 0;
-        sumNeg += s.negative || 0;
-        countSent++;
-      }
-
-      if (countSent > 0) {
-        sentimentsAvg = {
-          positive: sumPos / countSent,
-          neutral: sumNeu / countSent,
-          negative: sumNeg / countSent,
-        };
-      }
-
-      // ---- agregação por curso ----
-      const byCourseMap = {};
-
-      for (const t of all) {
-        const course = t.metadata?.curso || 'Não informado';
-
-        if (!byCourseMap[course]) {
-          byCourseMap[course] = {
-            course,
-            count: 0,
-            distinctStudents: new Set(),
-            lastTranscriptionAt: null,
-          };
-        }
-
-        const entry = byCourseMap[course];
-        entry.count += 1;
-
-        if (t.metadata?.discenteId) {
-          entry.distinctStudents.add(t.metadata.discenteId);
-        }
-
-        const createdAt = t.createdAt ? new Date(t.createdAt) : null;
-        if (createdAt) {
-          const currentLast = entry.lastTranscriptionAt
-            ? new Date(entry.lastTranscriptionAt)
-            : null;
-
-          if (!currentLast || createdAt > currentLast) {
-            entry.lastTranscriptionAt = createdAt.toISOString();
-          }
-        }
-      }
-
-      const byCourse = Object.values(byCourseMap).map((c) => ({
-        course: c.course,
-        count: c.count,
-        distinctStudents: c.distinctStudents.size,
-        lastTranscriptionAt: c.lastTranscriptionAt,
-      }));
-
-      // ---- highlights (keywords + topics) ----
-      const allKeywords = [];
-      const allTopics = [];
-
-      for (const t of all) {
-        const a = t.analysis || {};
-
-        // keywords pode ser array de string ou algo próximo disso
-        if (Array.isArray(a.keywords)) {
-          a.keywords.forEach((k) => {
-            if (!k) return;
-            if (typeof k === 'string') {
-              allKeywords.push(k);
-            } else if (k.term || k.keyword || k.label) {
-              allKeywords.push(k.term || k.keyword || k.label);
-            }
-          });
-        }
-
-        // topics (ou similar) se existirem
-        if (Array.isArray(a.topics)) {
-          a.topics.forEach((topic) => {
-            if (!topic) return;
-            if (typeof topic === 'string') {
-              allTopics.push(topic);
-            } else if (topic.term || topic.topic || topic.label) {
-              allTopics.push(topic.term || topic.topic || topic.label);
-            }
-          });
-        }
-      }
-
-      const topKeywords = buildFrequencyMap(allKeywords).slice(0, 10);
-      const topTopics = buildFrequencyMap(allTopics).slice(0, 10);
-
+      const data = computeOverviewData();
       res.json({
         success: true,
-        overview: {
-          totalTranscriptions,
-          totalSizeBytes,
-          avgSizeBytes,
-          totalStudents,
-          sentimentsAvg,
-        },
-        byCourse,
-        highlights: {
-          topKeywords,
-          topTopics,
-        },
+        ...data,
       });
     } catch (error) {
       console.error('Erro no overview de relatórios:', error);
       res.status(500).json({
         success: false,
         message: 'Erro ao gerar overview de relatórios',
+        error: error.message,
+      });
+    }
+  });
+
+  router.get('/overview/export', (req, res) => {
+    try {
+      const data = computeOverviewData();
+      const { overview, byCourse, highlights, timeline, periodWithMostRequests } = data;
+
+      const lines = [];
+      lines.push('Relatório geral de atendimentos');
+      lines.push(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
+      lines.push('');
+      lines.push(`Total de transcrições: ${overview.totalTranscriptions}`);
+      lines.push(`Total de discentes atendidos: ${overview.totalStudents}`);
+      lines.push(`Tamanho total (KB): ${Math.round((overview.totalSizeBytes || 0) / 1024)}`);
+      lines.push(`Tamanho médio por registro (KB): ${Math.round((overview.avgSizeBytes || 0) / 1024)}`);
+
+      if (overview.sentimentsAvg) {
+        lines.push('Sentimento médio geral:');
+        lines.push(
+          `- Positivo: ${(overview.sentimentsAvg.positive * 100).toFixed(1)}% | Neutro: ${(overview.sentimentsAvg.neutral * 100).toFixed(1)}% | Negativo: ${(overview.sentimentsAvg.negative * 100).toFixed(1)}%`
+        );
+      }
+
+      if (periodWithMostRequests) {
+        lines.push('');
+        lines.push(
+          `Período com mais solicitações: ${periodWithMostRequests.periodLabel} (${periodWithMostRequests.count} atendimentos)`
+        );
+      }
+
+      if (timeline.length > 0) {
+        lines.push('');
+        lines.push('Distribuição mensal de atendimentos:');
+        timeline.forEach((entry) => {
+          lines.push(`- ${entry.periodLabel}: ${entry.count}`);
+        });
+      }
+
+      lines.push('');
+      lines.push('Distribuição por curso:');
+      if (byCourse.length === 0) {
+        lines.push('- Nenhum curso encontrado');
+      } else {
+        byCourse.forEach((course) => {
+          lines.push(
+            `- ${course.course}: ${course.count} transcrições | ${course.distinctStudents} discentes | Último registro: ${course.lastTranscriptionAt ? new Date(course.lastTranscriptionAt).toLocaleDateString('pt-BR') : '---'}`
+          );
+        });
+      }
+
+      lines.push('');
+      lines.push('Principais palavras-chave:');
+      if (!highlights.topKeywords?.length) {
+        lines.push('- Nenhum dado disponível');
+      } else {
+        highlights.topKeywords.forEach((keyword) => {
+          lines.push(`- ${keyword.term}: ${keyword.count} citações`);
+        });
+      }
+
+      lines.push('');
+      lines.push('Principais tópicos:');
+      if (!highlights.topTopics?.length) {
+        lines.push('- Nenhum dado disponível');
+      } else {
+        highlights.topTopics.forEach((topic) => {
+          lines.push(`- ${topic.term}: ${topic.count} citações`);
+        });
+      }
+
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="relatorio_geral_${Date.now()}.txt"`
+      );
+      res.send(lines.join('\n'));
+    } catch (error) {
+      console.error('Erro ao exportar análise geral:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao exportar análise geral',
+        error: error.message,
+      });
+    }
+  });
+
+  router.get('/overview/export-pdf', (req, res) => {
+    try {
+      const data = computeOverviewData();
+      const { overview, byCourse, highlights, timeline, periodWithMostRequests } = data;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="relatorio_geral_${Date.now()}.pdf"`
+      );
+
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      doc.pipe(res);
+
+      doc.fontSize(18).text('Relatório geral de atendimentos', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
+      doc.moveDown();
+
+      doc.fontSize(14).text('Visão geral', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(12).text(`Total de transcrições: ${overview.totalTranscriptions}`);
+      doc.text(`Total de discentes atendidos: ${overview.totalStudents}`);
+      doc.text(
+        `Tamanho total (KB): ${Math.round((overview.totalSizeBytes || 0) / 1024)}`
+      );
+      doc.text(
+        `Tamanho médio por registro (KB): ${Math.round(
+          (overview.avgSizeBytes || 0) / 1024
+        )}`
+      );
+
+      if (overview.sentimentsAvg) {
+        doc.moveDown(0.5);
+        doc.text('Sentimento médio geral:');
+        doc.text(
+          `Positivo: ${(overview.sentimentsAvg.positive * 100).toFixed(
+            1
+          )}% | Neutro: ${(overview.sentimentsAvg.neutral * 100).toFixed(
+            1
+          )}% | Negativo: ${(overview.sentimentsAvg.negative * 100).toFixed(1)}%`
+        );
+      }
+
+      if (periodWithMostRequests) {
+        doc.moveDown();
+        doc.fontSize(14).text('Período com mais solicitações', { underline: true });
+        doc.moveDown(0.5);
+        doc.fontSize(12).text(periodWithMostRequests.periodLabel);
+        doc.text(`${periodWithMostRequests.count} atendimentos registrados.`);
+      }
+
+      if (timeline.length > 0) {
+        doc.moveDown();
+        doc.fontSize(14).text('Evolução mensal', { underline: true });
+        doc.moveDown(0.5);
+        timeline.forEach((entry) => {
+          doc.fontSize(12).text(`${entry.periodLabel}: ${entry.count} atendimentos`);
+        });
+      }
+
+      doc.moveDown();
+      doc.fontSize(14).text('Distribuição por curso', { underline: true });
+      doc.moveDown(0.5);
+      if (byCourse.length === 0) {
+        doc.fontSize(12).text('Nenhum curso encontrado.');
+      } else {
+        byCourse.forEach((course) => {
+          doc
+            .fontSize(12)
+            .text(
+              `${course.course} - ${course.count} transcrições | ${course.distinctStudents} discentes | Último registro: ${
+                course.lastTranscriptionAt
+                  ? new Date(course.lastTranscriptionAt).toLocaleDateString('pt-BR')
+                  : '---'
+              }`
+            );
+          doc.moveDown(0.2);
+        });
+      }
+
+      doc.moveDown();
+      doc.fontSize(14).text('Principais palavras-chave', { underline: true });
+      doc.moveDown(0.5);
+      if (!highlights.topKeywords?.length) {
+        doc.fontSize(12).text('Nenhum dado disponível.');
+      } else {
+        highlights.topKeywords.forEach((keyword) => {
+          doc.fontSize(12).text(`${keyword.term}: ${keyword.count} citações`);
+        });
+      }
+
+      doc.moveDown();
+      doc.fontSize(14).text('Principais tópicos', { underline: true });
+      doc.moveDown(0.5);
+      if (!highlights.topTopics?.length) {
+        doc.fontSize(12).text('Nenhum dado disponível.');
+      } else {
+        highlights.topTopics.forEach((topic) => {
+          doc.fontSize(12).text(`${topic.term}: ${topic.count} citações`);
+        });
+      }
+
+      doc.end();
+    } catch (error) {
+      console.error('Erro ao exportar análise geral em PDF:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao exportar análise geral em PDF',
         error: error.message,
       });
     }
