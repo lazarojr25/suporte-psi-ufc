@@ -275,11 +275,20 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     if (db && meetingId) {
       try {
         const meetingRef = db.collection('meetings').doc(meetingId);
-        await meetingRef.update({
+        const updatePayload = {
           status: 'concluida',
           updatedAt: new Date().toISOString(),
           transcriptionFileName: finalFile,
-        });
+        };
+
+        // garante vínculo se ainda não existir
+        if (extraInfo.discenteId) updatePayload.discenteId = extraInfo.discenteId;
+        if (extraInfo.studentEmail) updatePayload.studentEmail = extraInfo.studentEmail;
+        if (extraInfo.studentName) updatePayload.studentName = extraInfo.studentName;
+        if (extraInfo.curso) updatePayload.curso = extraInfo.curso;
+        if (extraInfo.solicitacaoId) updatePayload.solicitacaoId = extraInfo.solicitacaoId;
+
+        await meetingRef.update(updatePayload);
       } catch (e) {
         console.warn('Não foi possível atualizar status do meeting após transcrição:', e?.message);
       }

@@ -1,5 +1,5 @@
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 import {
   doc,
   getDoc,
@@ -37,8 +37,31 @@ export default function DiscenteDetalhe() {
   // ⭐ Meetings do sistema (vamos filtrar por discente depois)
   const [allMeetings, setAllMeetings] = useState([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
+  const [meetingsLoaded, setMeetingsLoaded] = useState(false);
+  const meetingsCacheRef = useRef(null);
 
   useEffect(() => {
+    const loadMeetings = async () => {
+      if (meetingsCacheRef.current) {
+        setAllMeetings(meetingsCacheRef.current);
+        setMeetingsLoaded(true);
+        return;
+      }
+      try {
+        setLoadingMeetings(true);
+        const resp = await apiService.getMeetings(); // GET /api/meetings
+        if (resp?.success && resp.data?.meetings) {
+          meetingsCacheRef.current = resp.data.meetings;
+          setAllMeetings(resp.data.meetings);
+        }
+        setMeetingsLoaded(true);
+      } catch (mErr) {
+        console.warn('Falha ao carregar meetings:', mErr);
+      } finally {
+        setLoadingMeetings(false);
+      }
+    };
+
     const loadData = async () => {
       try {
         setError(null);
@@ -102,17 +125,7 @@ export default function DiscenteDetalhe() {
         }
 
         // 6) Meetings (todas; filtramos no front por discenteId)
-        try {
-          setLoadingMeetings(true);
-          const resp = await apiService.getMeetings(); // GET /api/meetings
-          if (resp?.success && resp.data?.meetings) {
-            setAllMeetings(resp.data.meetings);
-          }
-        } catch (mErr) {
-          console.warn('Falha ao carregar meetings:', mErr);
-        } finally {
-          setLoadingMeetings(false);
-        }
+        await loadMeetings();
       } catch (err) {
         console.error(err);
         setError('Erro ao carregar dados do discente.');
@@ -170,12 +183,16 @@ export default function DiscenteDetalhe() {
       if (selectedMeetingId) {
         try {
           await apiService.updateMeeting(selectedMeetingId, { status: 'concluida' });
+          setLoadingMeetings(true);
           const respMeetings = await apiService.getMeetings();
           if (respMeetings?.success && respMeetings.data?.meetings) {
             setAllMeetings(respMeetings.data.meetings);
+            setMeetingsLoaded(true);
           }
         } catch (e) {
           console.warn('Falha ao atualizar status da reunião:', e);
+        } finally {
+          setLoadingMeetings(false);
         }
       }
 
@@ -191,12 +208,17 @@ export default function DiscenteDetalhe() {
 
       // 5) Recarregar meetings após nova sessão
       try {
+        setLoadingMeetings(true);
         const resp = await apiService.getMeetings();
         if (resp?.success && resp.data?.meetings) {
+          meetingsCacheRef.current = resp.data.meetings;
           setAllMeetings(resp.data.meetings);
+          setMeetingsLoaded(true);
         }
       } catch (mErr) {
         console.warn('Falha ao recarregar meetings:', mErr);
+      } finally {
+        setLoadingMeetings(false);
       }
     } catch (err) {
       console.error(err);
@@ -259,30 +281,44 @@ export default function DiscenteDetalhe() {
 
   const meetingsDiscente = allMeetings
     .filter((m) => {
-      const matchById = m.discenteId && m.discenteId === discente.id;
+      const matchById = m.discenteId && discente.id && m.discenteId === discente.id;
       const matchByEmail =
-        discente.email && m.studentEmail && m.studentEmail === discente.email;
+        !m.discenteId &&
+        discente.email &&
+        m.studentEmail &&
+        m.studentEmail.toLowerCase() === discente.email.toLowerCase();
       const matchByName =
-        discente.name && m.studentName && m.studentName === discente.name;
+        !m.discenteId &&
+        discente.name &&
+        m.studentName &&
+        m.studentName.toLowerCase() === discente.name.toLowerCase();
       return matchById || matchByEmail || matchByName;
     })
     .map((m) => {
       const d = getMeetingDate(m);
       const isPast = d ? d < now : false;
-      return { ...m, _dateObj: d, _isPast: isPast };
+      const normalizedStatus = (m.status || '')
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return { ...m, _dateObj: d, _isPast: isPast, _statusNormalized: normalizedStatus };
     })
     .sort((a, b) => {
       if (!a._dateObj || !b._dateObj) return 0;
       return b._dateObj - a._dateObj; // mais recente primeiro
     });
 
+  console.log('meetingsDiscente ',JSON.stringify(meetingsDiscente));
+
   const upcomingMeeting = meetingsDiscente
     .filter((m) => m._dateObj && m._dateObj >= now)
     .sort((a, b) => a._dateObj - b._dateObj)[0] || null;
 
-  const lastCompletedMeeting = meetingsDiscente
-    .filter((m) => m._dateObj && m._dateObj < now)
-    .sort((a, b) => b._dateObj - a._dateObj)[0] || null;
+  const lastCompletedMeeting =
+    meetingsDiscente
+      .filter((m) => m._dateObj && m._statusNormalized === 'concluida')
+      .sort((a, b) => b._dateObj - a._dateObj)[0] || null;
 
   const formatMeetingLabel = (meeting) => {
     if (!meeting) return 'Nenhuma sessão registrada';
@@ -300,20 +336,29 @@ export default function DiscenteDetalhe() {
     return '---';
   };
 
-  const parsePeriodBoundary = (value) => {
+  const parsePeriodBoundary = (value, isEnd = false) => {
     if (!value) return null;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      // usa horário local para alinhar com getMeetingDate (também local)
+      const hour = isEnd ? '23:59:59.999' : '00:00:00.000';
+      const date = new Date(`${value}T${hour}`);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
   };
 
-  const periodStartDate = parsePeriodBoundary(periodStartValue);
-  const periodEndDate = parsePeriodBoundary(periodEndValue);
+  const periodStartDate = parsePeriodBoundary(periodStartValue, false);
+  const periodEndDate = parsePeriodBoundary(periodEndValue, true);
 
-  const meetingsWithinPeriod = meetingsDiscente.filter((meeting) => {
-    if (!meeting._dateObj) return false;
-    if (meeting.status !== 'concluida') return false;
-    if (periodStartDate && meeting._dateObj < periodStartDate) return false;
-    if (periodEndDate && meeting._dateObj > periodEndDate) return false;
+  const concludedMeetings = meetingsDiscente.filter(
+    (meeting) => meeting._dateObj && meeting._statusNormalized === 'concluida'
+  );
+
+  const meetingsWithinPeriod = concludedMeetings.filter((meeting) => {
+    const meetingTime = meeting._dateObj.getTime();
+    if (periodStartDate && meetingTime < periodStartDate.getTime()) return false;
+    if (periodEndDate && meetingTime > periodEndDate.getTime()) return false;
     return true;
   });
 
@@ -322,9 +367,16 @@ export default function DiscenteDetalhe() {
     relatorioDiscente?.totalTranscriptions ??
     0;
 
-  const usedSessions = loadingMeetings
-    ? fallbackUsedSessions
-    : meetingsWithinPeriod.length;
+  // usa meetings somente depois do primeiro carregamento completo
+  const usedSessions =
+    meetingsLoaded && !loadingMeetings
+      ? (meetingsWithinPeriod.length || concludedMeetings.length || fallbackUsedSessions)
+      : fallbackUsedSessions;
+
+  console.log('meetingsLoaded ',meetingsLoaded);
+  console.log('loadingMeetings ',loadingMeetings);
+  console.log('meetingsWithinPeriod ',meetingsWithinPeriod);
+  console.log('usedSessions ',usedSessions);
 
   const configuredLimit =
     scheduleInfo?.limit ??
@@ -347,10 +399,10 @@ export default function DiscenteDetalhe() {
     if (m.status === 'cancelada') {
       label = 'Cancelada';
       className = 'bg-red-100 text-red-800 border border-red-200';
-    } else if (m.status === 'concluida') {
+    } else if (m._statusNormalized === 'concluida') {
       label = 'Concluída';
       className = 'bg-green-100 text-green-800 border border-green-200';
-    } else if (m.status === 'agendada') {
+    } else if (m._statusNormalized === 'agendada') {
       if (m._isPast) {
         label = 'Agendada (data já passou)';
         className = 'bg-amber-100 text-amber-800 border border-amber-200';
@@ -633,7 +685,7 @@ export default function DiscenteDetalhe() {
                         : 'Sessão futura'}
                     </p>
                   )}
-                  {m.status !== 'concluida' && (
+                  {m._statusNormalized !== 'concluida' && (
                     <button
                       type="button"
                       onClick={async () => {
@@ -642,15 +694,16 @@ export default function DiscenteDetalhe() {
                           await apiService.updateMeeting(m.id, { status: 'concluida' });
                           const resp = await apiService.getMeetings();
                           if (resp?.success && resp.data?.meetings) {
+                            meetingsCacheRef.current = resp.data.meetings;
                             setAllMeetings(resp.data.meetings);
-                          try {
-                            const check = await apiService.canScheduleForDiscente(discente.id);
-                            if (check?.success && check.data) {
-                              setScheduleInfo(check.data);
+                            try {
+                              const check = await apiService.canScheduleForDiscente(discente.id);
+                              if (check?.success && check.data) {
+                                setScheduleInfo(check.data);
+                              }
+                            } catch (e) {
+                              console.warn('Falha ao atualizar limite de sessões:', e);
                             }
-                          } catch (e) {
-                            console.warn('Falha ao atualizar limite de sessões:', e);
-                          }
                           }
                         } catch (err) {
                           console.error(err);
