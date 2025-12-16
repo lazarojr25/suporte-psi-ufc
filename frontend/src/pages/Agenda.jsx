@@ -262,25 +262,10 @@ export default function Agenda() {
                     {day.getDate()}
                   </span>
                   {hasEvents && (
-                    <div className="mt-1 space-y-1 w-full">
-                      {(eventsByDay[key] || []).slice(0, 2).map((evt) => (
-                        <div
-                          key={`${evt.type}-${evt.id}`}
-                          className={`text-[10px] px-2 py-1 rounded-full ${
-                            evt.type === 'meeting'
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}
-                        >
-                          {evt.type === 'meeting' ? 'Sessão' : 'Solicitação'}
-                          {evt.time && ` • ${evt.time}`}
-                        </div>
-                      ))}
-                      {(eventsByDay[key] || []).length > 2 && (
-                        <span className="text-[10px] text-gray-500">
-                          +{(eventsByDay[key] || []).length - 2} mais
-                        </span>
-                      )}
+                    <div className="mt-2 w-full">
+                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold">
+                        {(eventsByDay[key] || []).length} eventos
+                      </span>
                     </div>
                   )}
                 </button>
@@ -290,11 +275,16 @@ export default function Agenda() {
         </div>
 
         <div className="bg-white rounded-xl shadow p-4 space-y-3">
-          <div>
-            <p className="text-xs uppercase text-gray-500">Dia selecionado</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {selectedDate.split('-').reverse().join('/')}
-            </p>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-xs uppercase text-gray-500">Dia selecionado</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {selectedDate.split('-').reverse().join('/')}
+              </p>
+              <p className="text-xs text-gray-500">
+                {(eventsByDay[selectedDate] || []).length} eventos
+              </p>
+            </div>
           </div>
 
           {selectedEvents.length === 0 ? (
@@ -302,9 +292,9 @@ export default function Agenda() {
               Nenhum evento para esta data.
             </p>
           ) : (
-            <ul className="space-y-2 text-sm">
+            <div className="grid grid-cols-1 gap-2 max-h-[420px] overflow-y-auto pr-1">
               {selectedEvents.map((evt) => (
-                <li
+                <div
                   key={`${evt.type}-${evt.id}`}
                   className={`border rounded-lg p-3 bg-gray-50 flex flex-col gap-1 cursor-pointer ${selectedEvent?.id === evt.id ? 'ring-2 ring-blue-200 border-blue-400' : ''}`}
                   onClick={() => setSelectedEvent(evt)}
@@ -334,9 +324,9 @@ export default function Agenda() {
                       Discente: {evt.studentName}
                     </p>
                   )}
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
 
           <div className="pt-3 border-t">
