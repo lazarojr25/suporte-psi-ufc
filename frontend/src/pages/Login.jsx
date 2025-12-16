@@ -12,14 +12,14 @@ export default function Login() {
 
   // Se já está logado, manda para a área interna
   useEffect(() => {
-  const unsub = onAuthStateChanged(auth, (u) => {
-    if (u && !u.isAnonymous) {
-      navigate('/relatorios');
-    }
-  });
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u && !u.isAnonymous) {
+        navigate('/agenda');
+      }
+    });
 
-  return () => unsub();
-}, [navigate]);
+    return () => unsub();
+  }, [navigate]);
 
   const mapError = (code) => {
     switch (code) {
@@ -49,7 +49,7 @@ export default function Login() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      navigate('/relatorios');
+      navigate('/agenda');
     } catch (err) {
       console.error('Login error:', err);
       setError(mapError(err.code));

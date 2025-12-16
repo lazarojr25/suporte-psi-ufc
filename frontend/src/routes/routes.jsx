@@ -16,6 +16,7 @@ import ListaDiscentes from '../pages/ListaDiscentes';
 import CadastroFuncionario from '../pages/CadastroFuncionario';
 import UploadTranscricao from '../pages/UploadTranscricao';
 import ConfigAtendimentos from '../pages/ConfigAtendimentos';
+import Agenda from '../pages/Agenda';
 
 // layout privado
 import PrivateLayout from '../layouts/PrivateLayout';
@@ -34,12 +35,14 @@ export default function AppRoutes() {
           <Route path="/relatorios" element={<Relatorios />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/agendar/:solicitacaoId" element={<AgendarAtendimento />} />
+          <Route path="/agendar-atendimento/:solicitacaoId" element={<AgendarAtendimento />} />
           <Route path="/discentes" element={<ListaDiscentes />} />
           <Route path="/discentes/:discenteId" element={<DiscenteDetalhe />} />
           <Route path="/gerenciar-solicitacoes" element={<GerenciarSolicitacoes />} />
           <Route path="/cadastro" element={<CadastroFuncionario />} />
           <Route path="/upload-transcricao" element={<UploadTranscricao />} />
           <Route path="/config-atendimentos" element={<ConfigAtendimentos />} /> 
+          <Route path="/agenda" element={<Agenda />} />
         </Route>
 
         {/* fallback pra qualquer rota desconhecida */}
