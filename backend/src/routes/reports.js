@@ -26,6 +26,109 @@ const monthLabelFormatter = new Intl.DateTimeFormat('pt-BR', {
   year: 'numeric',
 });
 
+function normalizeString(value) {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  return str.length ? str : null;
+}
+
+function buildDiscentePatterns(transcriptions = []) {
+  const topics = [];
+  const keywords = [];
+  const actionable = [];
+  let sentimentsCount = 0;
+  let sumPos = 0;
+  let sumNeu = 0;
+  let sumNeg = 0;
+
+  for (const t of transcriptions) {
+    const analysis = t.analysis || {};
+
+    if (Array.isArray(analysis.topics)) {
+      analysis.topics.forEach((topic) => {
+        const normalized =
+          typeof topic === 'string'
+            ? normalizeString(topic)
+            : normalizeString(topic?.term || topic?.topic || topic?.label);
+        if (normalized) topics.push(normalized);
+      });
+    }
+
+    if (Array.isArray(analysis.keywords)) {
+      analysis.keywords.forEach((keyword) => {
+        const normalized =
+          typeof keyword === 'string'
+            ? normalizeString(keyword)
+            : normalizeString(keyword?.term || keyword?.keyword || keyword?.label);
+        if (normalized) keywords.push(normalized);
+      });
+    }
+
+    if (Array.isArray(analysis.actionableInsights)) {
+      analysis.actionableInsights.forEach((insight) => {
+        const normalized = normalizeString(insight);
+        if (normalized) actionable.push(normalized);
+      });
+    }
+
+    if (analysis.sentiments) {
+      sentimentsCount += 1;
+      sumPos += analysis.sentiments.positive || 0;
+      sumNeu += analysis.sentiments.neutral || 0;
+      sumNeg += analysis.sentiments.negative || 0;
+    }
+  }
+
+  const recurringThemes = buildFrequencyMap(topics)
+    .slice(0, 4)
+    .map(({ term }) => term);
+
+  const repeatedIdeas = buildFrequencyMap(keywords)
+    .slice(0, 6)
+    .map(({ term }) => term);
+
+  let commonTriggers = buildFrequencyMap(actionable)
+    .slice(0, 4)
+    .map(({ term }) => term);
+  if (!commonTriggers.length) {
+    commonTriggers = buildFrequencyMap(keywords)
+      .filter(({ count }) => count > 1)
+      .slice(0, 4)
+      .map(({ term }) => term);
+  }
+
+  const emotionalPatterns = [];
+  if (sentimentsCount > 0) {
+    const positivePct = (sumPos / sentimentsCount) * 100;
+    const neutralPct = (sumNeu / sentimentsCount) * 100;
+    const negativePct = (sumNeg / sentimentsCount) * 100;
+
+    const ranking = [
+      { label: 'positivos', value: positivePct },
+      { label: 'neutros', value: neutralPct },
+      { label: 'negativos', value: negativePct },
+    ].sort((a, b) => b.value - a.value);
+
+    if (ranking[0].value >= 5) {
+      emotionalPatterns.push(
+        `Predomínio de sentimentos ${ranking[0].label} (~${ranking[0].value.toFixed(0)}%)`
+      );
+    }
+    if (ranking[1].value >= 20) {
+      emotionalPatterns.push(
+        `Presença relevante de sentimentos ${ranking[1].label} (~${ranking[1].value.toFixed(0)}%)`
+      );
+    }
+  }
+
+  return {
+    recurringThemes,
+    repeatedIdeas,
+    emotionalPatterns,
+    commonTriggers,
+  };
+}
+
 function computeOverviewData() {
   const all = transcriptionService.listTranscriptionsWithMetadata();
 
@@ -552,27 +655,7 @@ function computeOverviewData() {
         0
       );
 
-      // Carrega o texto completo de todas as transcrições desse discente
-      const fullEntries = filtered
-        .map((t) => transcriptionService.getTranscription(t.fileName))
-        .filter((t) => t && t.content);
-
-      const fullHistoryText = fullEntries.map((t) => t.content).join('\n\n');
-
-      let historyPatterns = null;
-      if (fullHistoryText.trim().length > 0) {
-        try {
-          // se ainda não existir esse método, depois criamos no service
-          historyPatterns = transcriptionService.analyzeDiscenteHistory(
-            fullHistoryText
-          );
-        } catch (e) {
-          console.warn(
-            'Falha ao analisar padrões históricos do discente:',
-            e?.message
-          );
-        }
-      }
+      const historyPatterns = buildDiscentePatterns(filtered);
 
       // média simples de sentimentos, se existir
       let sentimentsAvg = null;
@@ -603,9 +686,6 @@ function computeOverviewData() {
           sentimentsAvg,
           transcriptions: filtered,
           historyPatterns,
-          // Adicionando os novos campos da análise histórica
-          longTermSummary: historyPatterns?.longTermSummary || null,
-          riskAssessment: historyPatterns?.riskAssessment || null,
         },
       });
     } catch (error) {
