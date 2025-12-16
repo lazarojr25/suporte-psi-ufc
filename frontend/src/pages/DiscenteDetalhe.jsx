@@ -1,5 +1,5 @@
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 import {
   doc,
   getDoc,
@@ -28,6 +28,7 @@ export default function DiscenteDetalhe() {
   const [sessionDate, setSessionDate] = useState(
     new Date().toISOString().slice(0, 10) // hoje, YYYY-MM-DD
   );
+  const [selectedMeetingId, setSelectedMeetingId] = useState('');
 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
@@ -36,8 +37,31 @@ export default function DiscenteDetalhe() {
   // ⭐ Meetings do sistema (vamos filtrar por discente depois)
   const [allMeetings, setAllMeetings] = useState([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
+  const [meetingsLoaded, setMeetingsLoaded] = useState(false);
+  const meetingsCacheRef = useRef(null);
 
   useEffect(() => {
+    const loadMeetings = async () => {
+      if (meetingsCacheRef.current) {
+        setAllMeetings(meetingsCacheRef.current);
+        setMeetingsLoaded(true);
+        return;
+      }
+      try {
+        setLoadingMeetings(true);
+        const resp = await apiService.getMeetings(); // GET /api/meetings
+        if (resp?.success && resp.data?.meetings) {
+          meetingsCacheRef.current = resp.data.meetings;
+          setAllMeetings(resp.data.meetings);
+        }
+        setMeetingsLoaded(true);
+      } catch (mErr) {
+        console.warn('Falha ao carregar meetings:', mErr);
+      } finally {
+        setLoadingMeetings(false);
+      }
+    };
+
     const loadData = async () => {
       try {
         setError(null);
@@ -101,17 +125,7 @@ export default function DiscenteDetalhe() {
         }
 
         // 6) Meetings (todas; filtramos no front por discenteId)
-        try {
-          setLoadingMeetings(true);
-          const resp = await apiService.getMeetings(); // GET /api/meetings
-          if (resp?.success && resp.data?.meetings) {
-            setAllMeetings(resp.data.meetings);
-          }
-        } catch (mErr) {
-          console.warn('Falha ao carregar meetings:', mErr);
-        } finally {
-          setLoadingMeetings(false);
-        }
+        await loadMeetings();
       } catch (err) {
         console.error(err);
         setError('Erro ao carregar dados do discente.');
@@ -150,17 +164,36 @@ export default function DiscenteDetalhe() {
         studentEmail: discente.email || '',
         studentId: discente.studentId || '',
         curso: discente.curso || '',
+        meetingId: selectedMeetingId || '',
         sessionDate, // data da sessão, usada no nome do arquivo e metadados
       });
 
       setSuccess('Transcrição enviada e processada com sucesso!');
       setSelectedFile(null);
+      setSelectedMeetingId('');
 
       // 3) Recarrega relatório/transcrições do discente
       const rel = await apiService.getReportsByDiscente(discenteId);
       if (rel?.success && rel.data) {
         setRelatorioDiscente(rel.data);
         setTranscricoes(rel.data.transcriptions || []);
+      }
+
+      // 3.1) Se houver meeting selecionado, marcar como concluída
+      if (selectedMeetingId) {
+        try {
+          await apiService.updateMeeting(selectedMeetingId, { status: 'concluida' });
+          setLoadingMeetings(true);
+          const respMeetings = await apiService.getMeetings();
+          if (respMeetings?.success && respMeetings.data?.meetings) {
+            setAllMeetings(respMeetings.data.meetings);
+            setMeetingsLoaded(true);
+          }
+        } catch (e) {
+          console.warn('Falha ao atualizar status da reunião:', e);
+        } finally {
+          setLoadingMeetings(false);
+        }
       }
 
       // 4) Recalcula limite após novo atendimento registrado
@@ -175,12 +208,17 @@ export default function DiscenteDetalhe() {
 
       // 5) Recarregar meetings após nova sessão
       try {
+        setLoadingMeetings(true);
         const resp = await apiService.getMeetings();
         if (resp?.success && resp.data?.meetings) {
+          meetingsCacheRef.current = resp.data.meetings;
           setAllMeetings(resp.data.meetings);
+          setMeetingsLoaded(true);
         }
       } catch (mErr) {
         console.warn('Falha ao recarregar meetings:', mErr);
+      } finally {
+        setLoadingMeetings(false);
       }
     } catch (err) {
       console.error(err);
@@ -199,31 +237,33 @@ export default function DiscenteDetalhe() {
   }
 
   const historyPatterns = relatorioDiscente?.historyPatterns;
+  const orderedTranscricoes = [...transcricoes].sort((a, b) => {
+    const dateA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const dateB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return dateB - dateA;
+  });
+  const lastTranscription = orderedTranscricoes[0] || null;
+  const aggregatedInsights = orderedTranscricoes
+    .flatMap((t) =>
+      (t.analysis?.actionableInsights || []).map((insight) => ({
+        insight,
+        fileName: t.fileName,
+        createdAt: t.createdAt,
+      }))
+    )
+    .slice(0, 6);
+  const insightsHighlight = aggregatedInsights.slice(0, 2);
+  const historyListSections = [
+    { key: 'recurringThemes', label: 'Temas recorrentes' },
+    { key: 'repeatedIdeas', label: 'Ideias repetidas' },
+    { key: 'emotionalPatterns', label: 'Padrões emocionais' },
+    { key: 'commonTriggers', label: 'Gatilhos comuns' },
+  ];
 
-  // ----- Cálculo dos limites usando Firestore + backend -----
-
-  const usedSessions =
-    scheduleInfo?.used ??
-    relatorioDiscente?.totalTranscriptions ??
-    0;
-
-  const configuredLimit =
-    semesterConfig?.maxSessionsPerDiscente ??
-    scheduleInfo?.limit ??
-    0;
-
-  const remainingSessions =
-    configuredLimit > 0
-      ? Math.max(0, configuredLimit - usedSessions)
-      : null;
-
-  const periodStart =
+  const periodStartValue =
     scheduleInfo?.periodStart ?? semesterConfig?.periodStart ?? null;
-  const periodEnd =
+  const periodEndValue =
     scheduleInfo?.periodEnd ?? semesterConfig?.periodEnd ?? null;
-
-  const isBlockedByLimit =
-    configuredLimit > 0 && remainingSessions !== null && remainingSessions <= 0;
 
   // ----- Histórico de sessões (meetings) -----
 
@@ -240,16 +280,117 @@ export default function DiscenteDetalhe() {
   };
 
   const meetingsDiscente = allMeetings
-    .filter((m) => m.discenteId === discente.id)
+    .filter((m) => {
+      const matchById = m.discenteId && discente.id && m.discenteId === discente.id;
+      const matchByEmail =
+        !m.discenteId &&
+        discente.email &&
+        m.studentEmail &&
+        m.studentEmail.toLowerCase() === discente.email.toLowerCase();
+      const matchByName =
+        !m.discenteId &&
+        discente.name &&
+        m.studentName &&
+        m.studentName.toLowerCase() === discente.name.toLowerCase();
+      return matchById || matchByEmail || matchByName;
+    })
     .map((m) => {
       const d = getMeetingDate(m);
       const isPast = d ? d < now : false;
-      return { ...m, _dateObj: d, _isPast: isPast };
+      const normalizedStatus = (m.status || '')
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return { ...m, _dateObj: d, _isPast: isPast, _statusNormalized: normalizedStatus };
     })
     .sort((a, b) => {
       if (!a._dateObj || !b._dateObj) return 0;
       return b._dateObj - a._dateObj; // mais recente primeiro
     });
+
+  console.log('meetingsDiscente ',JSON.stringify(meetingsDiscente));
+
+  const upcomingMeeting = meetingsDiscente
+    .filter((m) => m._dateObj && m._dateObj >= now)
+    .sort((a, b) => a._dateObj - b._dateObj)[0] || null;
+
+  const lastCompletedMeeting =
+    meetingsDiscente
+      .filter((m) => m._dateObj && m._statusNormalized === 'concluida')
+      .sort((a, b) => b._dateObj - a._dateObj)[0] || null;
+
+  const formatMeetingLabel = (meeting) => {
+    if (!meeting) return 'Nenhuma sessão registrada';
+    if (meeting._dateObj) {
+      return meeting._dateObj.toLocaleString('pt-BR', {
+        dateStyle: 'short',
+        timeStyle: meeting.scheduledTime ? 'short' : undefined,
+      });
+    }
+    if (meeting.scheduledDate) {
+      return meeting.scheduledTime
+        ? `${meeting.scheduledDate} ${meeting.scheduledTime}`
+        : meeting.scheduledDate;
+    }
+    return '---';
+  };
+
+  const parsePeriodBoundary = (value, isEnd = false) => {
+    if (!value) return null;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      // usa horário local para alinhar com getMeetingDate (também local)
+      const hour = isEnd ? '23:59:59.999' : '00:00:00.000';
+      const date = new Date(`${value}T${hour}`);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
+  const periodStartDate = parsePeriodBoundary(periodStartValue, false);
+  const periodEndDate = parsePeriodBoundary(periodEndValue, true);
+
+  const concludedMeetings = meetingsDiscente.filter(
+    (meeting) => meeting._dateObj && meeting._statusNormalized === 'concluida'
+  );
+
+  const meetingsWithinPeriod = concludedMeetings.filter((meeting) => {
+    const meetingTime = meeting._dateObj.getTime();
+    if (periodStartDate && meetingTime < periodStartDate.getTime()) return false;
+    if (periodEndDate && meetingTime > periodEndDate.getTime()) return false;
+    return true;
+  });
+
+  const fallbackUsedSessions =
+    scheduleInfo?.used ??
+    relatorioDiscente?.totalTranscriptions ??
+    0;
+
+  // usa meetings somente depois do primeiro carregamento completo
+  const usedSessions =
+    meetingsLoaded && !loadingMeetings
+      ? (meetingsWithinPeriod.length || concludedMeetings.length || fallbackUsedSessions)
+      : fallbackUsedSessions;
+
+  console.log('meetingsLoaded ',meetingsLoaded);
+  console.log('loadingMeetings ',loadingMeetings);
+  console.log('meetingsWithinPeriod ',meetingsWithinPeriod);
+  console.log('usedSessions ',usedSessions);
+
+  const configuredLimit =
+    scheduleInfo?.limit ??
+    semesterConfig?.maxSessionsPerDiscente ??
+    0;
+
+  const remainingSessions =
+    configuredLimit > 0 ? Math.max(0, configuredLimit - usedSessions) : null;
+
+  const periodStart = periodStartValue;
+  const periodEnd = periodEndValue;
+
+  const isBlockedByLimit =
+    configuredLimit > 0 && remainingSessions !== null && remainingSessions <= 0;
 
   const renderMeetingStatusBadge = (m) => {
     let label = '';
@@ -258,10 +399,10 @@ export default function DiscenteDetalhe() {
     if (m.status === 'cancelada') {
       label = 'Cancelada';
       className = 'bg-red-100 text-red-800 border border-red-200';
-    } else if (m.status === 'concluida') {
+    } else if (m._statusNormalized === 'concluida') {
       label = 'Concluída';
       className = 'bg-green-100 text-green-800 border border-green-200';
-    } else if (m.status === 'agendada') {
+    } else if (m._statusNormalized === 'agendada') {
       if (m._isPast) {
         label = 'Agendada (data já passou)';
         className = 'bg-amber-100 text-amber-800 border border-amber-200';
@@ -333,51 +474,170 @@ export default function DiscenteDetalhe() {
     <div className="p-4 max-w-5xl mx-auto space-y-6">
 
       {/* Dados do discente */}
-      <div className="bg-white rounded-xl shadow p-4">
-        <h1 className="text-2xl font-bold mb-2">Detalhes do Discente</h1>
-        <p><strong>Nome:</strong> {discente.name}</p>
-        <p><strong>Email:</strong> {discente.email}</p>
-        <p><strong>Matrícula:</strong> {discente.studentId}</p>
-        <p><strong>Curso:</strong> {discente.curso}</p>
-
-        {(scheduleInfo || semesterConfig) && (
-          <div className={`mt-3 border rounded-xl p-3 text-sm ${
-            isBlockedByLimit
-              ? 'bg-red-50 border-red-100 text-red-800'
-              : 'bg-blue-50 border-blue-100 text-blue-800'
-          }`}>
-            <p className="font-semibold">
-              Limite de sessões neste período
+      <div className="bg-white rounded-xl shadow p-5 space-y-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-500">
+              Discente
             </p>
-
-            {configuredLimit > 0 ? (
-              <>
-                <p>
-                  Utilizadas: <strong>{usedSessions}</strong> de{' '}
-                  <strong>{configuredLimit}</strong> &nbsp;– Restantes:{' '}
-                  <strong>{remainingSessions}</strong>
-                </p>
-                {isBlockedByLimit && (
-                  <p className="text-xs mt-1">
-                    Este discente atingiu o limite de sessões configurado para o período.
-                  </p>
-                )}
-              </>
-            ) : (
-              <p>
-                Sessões registradas neste período:{' '}
-                <strong>{usedSessions}</strong> (sem limite configurado)
+            <h1 className="text-3xl font-bold text-gray-900">{discente.name}</h1>
+            <p className="text-sm text-gray-500">
+              Matrícula: <span className="font-semibold text-gray-700">{discente.studentId || '---'}</span>
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm w-full md:w-auto">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs uppercase text-gray-500">Transcrições</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {relatorioDiscente?.totalTranscriptions ?? orderedTranscricoes.length}
               </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-xs uppercase text-gray-500">Solicitações</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {solicitacoes.length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700">
+          <div>
+            <dt className="text-xs uppercase text-gray-500">Curso</dt>
+            <dd className="text-gray-900">{discente.curso || '---'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-500">E-mail</dt>
+            <dd>
+              {discente.email ? (
+                <a
+                  href={`mailto:${discente.email}`}
+                  className="text-blue-600 hover:underline"
+                >
+                  {discente.email}
+                </a>
+              ) : (
+                '---'
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-500">ID no sistema</dt>
+            <dd className="text-gray-900 break-all">{discente.id}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-gray-500">Última atualização</dt>
+            <dd className="text-gray-900">
+              {lastTranscription?.createdAt
+                ? new Date(lastTranscription.createdAt).toLocaleString('pt-BR')
+                : 'Sem transcrições registradas'}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* Panorama rápido */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div
+          className={`rounded-xl border shadow-sm p-4 ${
+            isBlockedByLimit
+              ? 'bg-red-50 border-red-100'
+              : 'bg-blue-50 border-blue-100'
+          }`}
+        >
+          <p className="text-xs uppercase text-gray-600 tracking-wide">
+            Controle de sessões
+          </p>
+          <p className="text-3xl font-bold text-gray-900 mt-2">
+            {usedSessions}
+            {configuredLimit > 0 && (
+              <span className="text-lg text-gray-600"> / {configuredLimit}</span>
             )}
+          </p>
+          <p className="text-sm text-gray-700">
+            {configuredLimit > 0
+              ? `Restantes: ${remainingSessions}`
+              : 'Sem limite configurado'}
+          </p>
+          {isBlockedByLimit && (
+            <p className="text-xs text-red-700 mt-1">
+              Este discente atingiu o limite definido para o período.
+            </p>
+          )}
+          {(periodStart || periodEnd) && (
+            <div className="mt-3 pt-2 border-t border-white/60 text-xs text-gray-700">
+              Período considerado: {periodStart || '---'} a {periodEnd || '---'}
+            </div>
+          )}
+        </div>
 
-            {(periodStart || periodEnd) && (
-              <p className="text-xs mt-1">
-                Período considerado:&nbsp;
-                {periodStart || '---'} até {periodEnd || '---'}
-              </p>
+        <div className="bg-white rounded-xl shadow p-4 space-y-4">
+          <div>
+            <p className="text-xs uppercase text-gray-500 tracking-wide">
+              Próxima sessão agendada
+            </p>
+            <p className="text-base font-semibold text-gray-900">
+              {upcomingMeeting ? formatMeetingLabel(upcomingMeeting) : 'Nenhuma sessão registrada'}
+            </p>
+            <p className="text-xs text-gray-500">
+              {upcomingMeeting ? `Status: ${upcomingMeeting.status}` : 'Atualize a agenda quando houver uma nova data.'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-gray-500 tracking-wide">
+              Última sessão concluída
+            </p>
+            <p className="text-base font-semibold text-gray-900">
+              {lastCompletedMeeting ? formatMeetingLabel(lastCompletedMeeting) : 'Ainda não realizada'}
+            </p>
+            {lastCompletedMeeting && (
+              <p className="text-xs text-gray-500">Status: {lastCompletedMeeting.status}</p>
             )}
           </div>
-        )}
+          <div>
+            <p className="text-xs uppercase text-gray-500 tracking-wide">
+              Última transcrição
+            </p>
+            <p className="text-base font-semibold text-gray-900">
+              {lastTranscription?.createdAt
+                ? new Date(lastTranscription.createdAt).toLocaleString('pt-BR')
+                : 'Sem registros'}
+            </p>
+            {lastTranscription && (
+              <p className="text-xs text-gray-500">{lastTranscription.fileName}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow p-4 space-y-3">
+          <p className="text-xs uppercase text-gray-500 tracking-wide">
+            Insights em foco
+          </p>
+          {insightsHighlight.length > 0 ? (
+            <ul className="space-y-2">
+              {insightsHighlight.map((item, idx) => (
+                <li
+                  key={`${item.fileName}-${idx}`}
+                  className="text-xs text-gray-700 bg-gray-50 rounded-lg p-2"
+                >
+                  {item.insight}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Sem recomendações recentes. As próximas transcrições alimentarão este painel automaticamente.
+            </p>
+          )}
+          {historyPatterns?.recurringThemes?.length > 0 && (
+            <p className="text-xs text-gray-500">
+              Temas recorrentes:&nbsp;
+              <span className="text-gray-800">
+                {historyPatterns.recurringThemes.join(', ')}
+              </span>
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Histórico de sessões (meetings) */}
@@ -424,6 +684,38 @@ export default function DiscenteDetalhe() {
                         ? 'Sessão em data já passada'
                         : 'Sessão futura'}
                     </p>
+                  )}
+                  {m._statusNormalized !== 'concluida' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setLoadingMeetings(true);
+                        try {
+                          await apiService.updateMeeting(m.id, { status: 'concluida' });
+                          const resp = await apiService.getMeetings();
+                          if (resp?.success && resp.data?.meetings) {
+                            meetingsCacheRef.current = resp.data.meetings;
+                            setAllMeetings(resp.data.meetings);
+                            try {
+                              const check = await apiService.canScheduleForDiscente(discente.id);
+                              if (check?.success && check.data) {
+                                setScheduleInfo(check.data);
+                              }
+                            } catch (e) {
+                              console.warn('Falha ao atualizar limite de sessões:', e);
+                            }
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          alert('Não foi possível concluir a sessão.');
+                        } finally {
+                          setLoadingMeetings(false);
+                        }
+                      }}
+                      className="mt-1 inline-flex items-center px-2 py-1 rounded-md bg-green-600 text-white text-[11px] font-semibold hover:bg-green-700"
+                    >
+                      Marcar como concluída
+                    </button>
                   )}
                 </div>
               </li>
@@ -560,7 +852,7 @@ export default function DiscenteDetalhe() {
       <div className="bg-white rounded-xl shadow p-4">
         <h2 className="text-lg font-semibold mb-3">Transcrições e análise desse discente</h2>
 
-        {!relatorioDiscente && transcricoes.length === 0 ? (
+        {!relatorioDiscente && orderedTranscricoes.length === 0 ? (
           <p className="text-gray-500 text-sm">
             Nenhuma transcrição vinculada a este discente.
           </p>
@@ -599,64 +891,135 @@ export default function DiscenteDetalhe() {
               </div>
             )}
 
+            {Boolean(aggregatedInsights.length) && (
+              <div className="mb-4 border rounded-lg p-4 bg-white text-sm shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-800">
+                    Insights acionáveis recomendados
+                  </h3>
+                  <span className="text-xs text-gray-500">
+                    {aggregatedInsights.length} sugest{aggregatedInsights.length > 1 ? 'ões' : 'ão'} recentes
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {aggregatedInsights.map((item, index) => (
+                    <li
+                      key={`${item.fileName}-${index}`}
+                      className="border rounded-lg p-3 bg-gray-50"
+                    >
+                      <p className="text-gray-800">{item.insight}</p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Extraído de{' '}
+                        <span className="font-semibold">{item.fileName}</span>{' '}
+                        {item.createdAt &&
+                          `(${new Date(item.createdAt).toLocaleDateString('pt-BR')})`}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Padrões históricos (IA) */}
             {historyPatterns && (
-              <div className="mb-4 border rounded-lg p-3 bg-gray-50 text-sm">
-                <h3 className="font-semibold mb-1">Padrões ao longo das sessões</h3>
-                {Array.isArray(historyPatterns.recurringThemes) && (
-                  <p className="text-gray-700">
-                    <strong>Temas recorrentes:</strong>{' '}
-                    {historyPatterns.recurringThemes.join(', ')}
-                  </p>
-                )}
-                {Array.isArray(historyPatterns.repeatedIdeas) && (
-                  <p className="text-gray-700">
-                    <strong>Ideias repetidas:</strong>{' '}
-                    {historyPatterns.repeatedIdeas.join(', ')}
-                  </p>
-                )}
-                {Array.isArray(historyPatterns.emotionalPatterns) && (
-                  <p className="text-gray-700">
-                    <strong>Padrões emocionais:</strong>{' '}
-                    {historyPatterns.emotionalPatterns.join(', ')}
-                  </p>
-                )}
-                {Array.isArray(historyPatterns.commonTriggers) && (
-                  <p className="text-gray-700">
-                    <strong>Gatilhos comuns:</strong>{' '}
-                    {historyPatterns.commonTriggers.join(', ')}
-                  </p>
-                )}
-                {historyPatterns.overallSummary && (
-                  <p className="text-gray-800 mt-1">
-                    <strong>Resumo geral:</strong> {historyPatterns.overallSummary}
-                  </p>
+              <div className="mb-4 border rounded-lg p-4 bg-gray-50 text-sm">
+                <h3 className="font-semibold mb-3 text-gray-800">
+                  Padrões percebidos ao longo das sessões
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {historyListSections.map((section) => {
+                    const entries = historyPatterns?.[section.key];
+                    if (!Array.isArray(entries) || entries.length === 0) {
+                      return null;
+                    }
+                    return (
+                      <div key={section.key} className="bg-white rounded-lg p-3 shadow-inner">
+                        <p className="text-xs uppercase text-gray-500 font-semibold mb-1">
+                          {section.label}
+                        </p>
+                        <p className="text-gray-700">{entries.join(', ')}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!historyListSections.some(
+                  (section) =>
+                    Array.isArray(historyPatterns?.[section.key]) &&
+                    historyPatterns[section.key].length > 0
+                ) && (
+                  <p className="text-gray-500">Nenhum padrão identificado até o momento.</p>
                 )}
               </div>
             )}
 
             {/* Lista de transcrições */}
             <ul className="space-y-2 text-sm">
-              {transcricoes.map((t) => (
-                <li key={t.fileName} className="border rounded-lg p-2">
-                  <p className="font-medium text-gray-800">{t.fileName}</p>
-                  <p className="text-xs text-gray-500">
-                    Criado em:{' '}
-                    {t.createdAt
-                      ? new Date(t.createdAt).toLocaleString('pt-BR')
-                      : '---'}
-                  </p>
+              {orderedTranscricoes.map((t) => (
+                <li key={t.fileName} className="border rounded-lg p-3 bg-white shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-gray-900">{t.fileName}</p>
+                      <p className="text-xs text-gray-500">
+                        Registrada em{' '}
+                        {t.createdAt
+                          ? new Date(t.createdAt).toLocaleString('pt-BR')
+                          : '---'}
+                      </p>
+                    </div>
+                    {t.analysis?.sentiments && (
+                      <div className="text-[11px] text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                        Sentimento:{' '}
+                        <span className="text-green-600">
+                          {(t.analysis.sentiments.positive * 100).toFixed(0)}%+
+                        </span>{' '}
+                        /{' '}
+                        <span className="text-yellow-600">
+                          {(t.analysis.sentiments.neutral * 100).toFixed(0)}%º
+                        </span>{' '}
+                        /{' '}
+                        <span className="text-red-500">
+                          {(t.analysis.sentiments.negative * 100).toFixed(0)}%-
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   {t.analysis?.summary && (
-                    <p className="mt-1 text-xs text-gray-700">
-                      <strong>Resumo:</strong> {t.analysis.summary}
+                    <p className="mt-2 text-gray-700 text-sm leading-relaxed">
+                      {t.analysis.summary}
                     </p>
                   )}
-                  {Array.isArray(t.analysis?.keywords) &&
-                    t.analysis.keywords.length > 0 && (
-                      <p className="mt-1 text-xs text-gray-600">
-                        <strong>Palavras-chave:</strong>{' '}
-                        {t.analysis.keywords.join(', ')}
-                      </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    {Array.isArray(t.analysis?.keywords) &&
+                      t.analysis.keywords.map((kw) => (
+                        <span
+                          key={`${t.fileName}-kw-${kw}`}
+                          className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full"
+                        >
+                          {kw}
+                        </span>
+                      ))}
+                    {Array.isArray(t.analysis?.topics) &&
+                      t.analysis.topics.map((topic) => (
+                        <span
+                          key={`${t.fileName}-topic-${topic}`}
+                          className="px-2 py-1 bg-amber-50 text-amber-700 rounded-full"
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                  </div>
+                  {Array.isArray(t.analysis?.actionableInsights) &&
+                    t.analysis.actionableInsights.length > 0 && (
+                      <div className="mt-3 bg-gray-50 border rounded-lg p-2">
+                        <p className="text-xs font-semibold text-gray-700 mb-1">
+                          Sugestões desta sessão
+                        </p>
+                        <ul className="list-disc list-inside text-xs text-gray-700 space-y-1">
+                          {t.analysis.actionableInsights.map((insight, idx) => (
+                            <li key={`${t.fileName}-insight-${idx}`}>{insight}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                 </li>
               ))}
@@ -702,6 +1065,29 @@ export default function DiscenteDetalhe() {
               onChange={(e) => setSelectedFile(e.target.files[0] || null)}
               className="block"
             />
+          </div>
+
+          <div className="flex-1 min-w-[220px]">
+            <label className="block mb-1 text-gray-700">
+              Vincular a uma sessão (opcional)
+            </label>
+            <select
+              value={selectedMeetingId}
+              onChange={(e) => setSelectedMeetingId(e.target.value)}
+              className="border rounded-lg px-3 py-2 w-full text-sm"
+            >
+              <option value="">Nenhuma</option>
+              {meetingsDiscente
+                .filter((m) => m.status !== 'concluida' && m.status !== 'cancelada')
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.scheduledDate} {m.scheduledTime ? `às ${m.scheduledTime}` : ''} — {m.status}
+                  </option>
+                ))}
+            </select>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Ao enviar vinculado, a sessão será marcada como concluída.
+            </p>
           </div>
         </div>
 

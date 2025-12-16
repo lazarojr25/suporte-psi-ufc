@@ -1,5 +1,5 @@
 // Serviço para comunicação com o backend Node.js
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'http://localhost:5001/api';
 
 class ApiService {
   constructor() {
@@ -168,6 +168,32 @@ class ApiService {
     const res = await fetch(`${this.baseURL}/reports/export`);
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     return res.blob();
+  }
+
+  async exportReportsOverview() {
+    const res = await fetch(`${this.baseURL}/reports/overview/export`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    let fileName = null;
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+    const blob = await res.blob();
+    return { blob, fileName };
+  }
+
+  async exportReportsOverviewPdf() {
+    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    let fileName = null;
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+    const blob = await res.blob();
+    return { blob, fileName };
   }
 
   // ------------------ Saúde ------------------

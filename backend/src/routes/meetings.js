@@ -256,8 +256,8 @@ router.get('/can-schedule/:discenteId', async (req, res) => {
     snapshot.forEach((docSnap) => {
       const m = docSnap.data() || {};
 
-      // ignora canceladas
-      if (m.status === 'cancelada') return;
+      // Considera apenas sessões concluídas
+      if (m.status !== 'concluida') return;
 
       // tenta pegar data mais precisa
       let d;

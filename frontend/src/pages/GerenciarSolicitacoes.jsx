@@ -63,18 +63,32 @@ export default function GerenciarSolicitacoes() {
     });
   };
 
-  const renderStatusBadge = (statusRaw) => {
-    const status = statusRaw || 'Pendente';
+  const normalizeStatus = (statusRaw) => {
+    if (!statusRaw) return 'pendente';
+    const normalized = statusRaw
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
 
-    let label = status;
+    if (normalized.includes('agend')) return 'agendada';
+    if (normalized.includes('pend')) return 'pendente';
+    if (normalized.includes('concl')) return 'concluida';
+    return normalized;
+  };
+
+  const renderStatusBadge = (statusRaw) => {
+    const status = normalizeStatus(statusRaw);
+
+    let label = status.charAt(0).toUpperCase() + status.slice(1);
     let classes = '';
 
-    if (status === 'Pendente') {
-      label = 'Pendente';
+    if (status === 'pendente') {
       classes = 'bg-amber-50 text-amber-800 border border-amber-200';
-    } else if (status === 'Agendada') {
-      label = 'Agendada';
+    } else if (status === 'agendada') {
       classes = 'bg-emerald-50 text-emerald-800 border border-emerald-200';
+    } else if (status === 'concluida') {
+      classes = 'bg-blue-50 text-blue-800 border border-blue-200';
     } else {
       classes = 'bg-gray-50 text-gray-700 border border-gray-200';
     }
@@ -90,9 +104,11 @@ export default function GerenciarSolicitacoes() {
 
   // Separa por status
   const pendentes = solicitacoes.filter(
-    (s) => (s.status || 'Pendente') === 'Pendente'
+    (s) => normalizeStatus(s.status) === 'pendente'
   );
-  const agendadas = solicitacoes.filter((s) => s.status === 'Agendada');
+  const agendadas = solicitacoes.filter(
+    (s) => normalizeStatus(s.status) === 'agendada'
+  );
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">

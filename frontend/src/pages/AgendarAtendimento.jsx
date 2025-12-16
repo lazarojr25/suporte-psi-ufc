@@ -91,7 +91,7 @@ export default function AgendarAtendimento() {
       // 🔹 Atualiza status da solicitação no Firestore
       const solicitacaoRef = doc(db, 'solicitacoesAtendimento', solicitacaoId);
       await updateDoc(solicitacaoRef, {
-        status: 'AGENDADA',          // ou 'em_atendimento', 'agendada', etc.
+        status: 'agendada',          // ou 'em_atendimento', 'agendada', etc.
         updatedAt: serverTimestamp() // opcional, pra ter histórico
       });
 

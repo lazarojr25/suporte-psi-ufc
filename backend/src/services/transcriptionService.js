@@ -289,20 +289,6 @@ Retorne APENAS o JSON, sem markdown ou texto extra.`;
     }
     return null;
   }
-
-  /**
-   * Ainda deixei a análise de histórico como “fake” pra não quebrar as rotas.
-   * Se quiser usar Gemini aqui também, aí a gente marca como async e ajusta o reports.js pra usar await.
-   */
-  analyzeDiscenteHistory(fullHistoryText) {
-    return {
-      mainTopics: ['tópico A', 'tópico B'],
-      sentimentTrend: 'estável',
-      longTermSummary:
-        'Análise de histórico simulada. Aqui entrariam padrões ao longo das sessões.',
-      riskAssessment: 'Desconhecido',
-    };
-  }
 }
 
 export default TranscriptionService;

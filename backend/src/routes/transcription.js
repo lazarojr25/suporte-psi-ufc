@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import TranscriptionService from '../services/transcriptionService.js';
+import { initializeApp, applicationDefault } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // Conversão e segmentação
 import ffmpeg from 'fluent-ffmpeg';
@@ -18,6 +20,21 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 const transcriptionService = new TranscriptionService();
+
+// Firebase Admin (para vincular meeting/solicitação quando possível)
+let db = null;
+try {
+  initializeApp({
+    credential: applicationDefault(),
+  });
+  db = getFirestore();
+} catch (error) {
+  if (/already exists/u.test(error.message)) {
+    db = getFirestore();
+  } else {
+    console.error('Erro ao inicializar Firebase Admin em transcription:', error);
+  }
+}
 
 // -------------------- utils --------------------
 const ensureDir = (dir) => {
@@ -102,6 +119,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     const {
       discenteId,
       solicitacaoId,
+      meetingId,
       studentName,
       studentEmail,
       studentId,
@@ -112,12 +130,35 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     const extraInfo = {
       discenteId: discenteId || null,
       solicitacaoId: solicitacaoId || null,
+      meetingId: meetingId || null,
       studentName: studentName || null,
       studentEmail: studentEmail || null,
       studentId: studentId || null,
       curso: curso || null,
       sessionDate: sessionDate || null,
     };
+
+    // Enriquecer metadados a partir do meeting, quando disponível
+    if (db && meetingId) {
+      try {
+        const snap = await db.collection('meetings').doc(meetingId).get();
+        if (snap.exists) {
+          const data = snap.data() || {};
+          extraInfo.discenteId = extraInfo.discenteId || data.discenteId || null;
+          extraInfo.solicitacaoId = extraInfo.solicitacaoId || data.solicitacaoId || null;
+          extraInfo.studentName = extraInfo.studentName || data.studentName || null;
+          extraInfo.studentEmail = extraInfo.studentEmail || data.studentEmail || null;
+          extraInfo.studentId = extraInfo.studentId || data.studentId || null;
+          extraInfo.curso = extraInfo.curso || data.curso || null;
+          extraInfo.sessionDate =
+            extraInfo.sessionDate ||
+            data.scheduledDate ||
+            (data.dateTime ? new Date(data.dateTime).toISOString().slice(0, 10) : null);
+        }
+      } catch (e) {
+        console.warn('Não foi possível enriquecer metadados a partir do meeting:', e?.message);
+      }
+    }
 
     const originalPath = req.file.path;
     const baseName = path.basename(
@@ -229,6 +270,28 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
 
       // (opcional) Limpeza de temporários: partes WAV / txt, etc.
       // fs.rmSync(workDir, { recursive: true, force: true });
+    }
+
+    if (db && meetingId) {
+      try {
+        const meetingRef = db.collection('meetings').doc(meetingId);
+        const updatePayload = {
+          status: 'concluida',
+          updatedAt: new Date().toISOString(),
+          transcriptionFileName: finalFile,
+        };
+
+        // garante vínculo se ainda não existir
+        if (extraInfo.discenteId) updatePayload.discenteId = extraInfo.discenteId;
+        if (extraInfo.studentEmail) updatePayload.studentEmail = extraInfo.studentEmail;
+        if (extraInfo.studentName) updatePayload.studentName = extraInfo.studentName;
+        if (extraInfo.curso) updatePayload.curso = extraInfo.curso;
+        if (extraInfo.solicitacaoId) updatePayload.solicitacaoId = extraInfo.solicitacaoId;
+
+        await meetingRef.update(updatePayload);
+      } catch (e) {
+        console.warn('Não foi possível atualizar status do meeting após transcrição:', e?.message);
+      }
     }
 
     return res.json({

@@ -9,7 +9,7 @@ export default function TopBar({ user }) {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      navigate('/login');
+      navigate('/');
     } catch (e) {
       console.error('Erro ao sair:', e);
     }
@@ -30,6 +30,14 @@ export default function TopBar({ user }) {
             </span>
 
             <nav className="hidden sm:flex items-center gap-2">
+              <NavLink
+                to="/agenda"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
+                Agenda
+              </NavLink>
               <NavLink
                 to="/gerenciar-solicitacoes"
                 className={({ isActive }) =>
@@ -92,6 +100,14 @@ export default function TopBar({ user }) {
             }
           >
             Relatórios
+          </NavLink>
+          <NavLink
+            to="/agenda"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkInactive}`
+            }
+          >
+            Agenda
           </NavLink>
           <NavLink
             to="/gerenciar-solicitacoes"
