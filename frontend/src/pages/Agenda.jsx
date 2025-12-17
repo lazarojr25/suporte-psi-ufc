@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import apiService from '../services/api';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -23,6 +23,11 @@ export default function Agenda() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(null);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState(null);
+  const [noteSuccess, setNoteSuccess] = useState(null);
+  const lastNoteEventIdRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -138,6 +143,23 @@ export default function Agenda() {
     }
   }, [selectedDate, selectedEvents]);
 
+  useEffect(() => {
+    const currentId =
+      selectedEvent && selectedEvent.type === 'meeting' ? selectedEvent.id : null;
+
+    if (selectedEvent?.type === 'meeting') {
+      const raw = selectedEvent.raw || {};
+      setNoteText(raw.informalNotes || raw.completionNotes || raw.notes || '');
+    } else {
+      setNoteText('');
+    }
+    setNoteError(null);
+    if (lastNoteEventIdRef.current !== currentId) {
+      setNoteSuccess(null);
+    }
+    lastNoteEventIdRef.current = currentId;
+  }, [selectedEvent]);
+
   const changeMonth = (delta) => {
     const d = new Date(currentMonth);
     d.setMonth(currentMonth.getMonth() + delta);
@@ -193,6 +215,23 @@ export default function Agenda() {
       setUploadError('Não foi possível enviar a transcrição.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleSaveInformalNotes = async () => {
+    if (!selectedEvent || selectedEvent.type !== 'meeting') return;
+    setSavingNote(true);
+    setNoteError(null);
+    setNoteSuccess(null);
+    try {
+      await apiService.updateMeeting(selectedEvent.id, { informalNotes: noteText });
+      setNoteSuccess('Prontuário salvo.');
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setNoteError('Não foi possível salvar as anotações.');
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -357,33 +396,65 @@ export default function Agenda() {
                 )}
 
                 {selectedEvent.type === 'meeting' ? (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xs uppercase text-gray-500">
-                      Enviar transcrição desta sessão
-                    </p>
-                    {uploadError && (
-                      <p className="text-xs text-red-600">{uploadError}</p>
-                    )}
-                    {uploadSuccess && (
-                      <p className="text-xs text-green-600">{uploadSuccess}</p>
-                    )}
-                    <input
-                      type="file"
-                      accept="audio/*,video/*"
-                      onChange={(e) => setSelectedFile(e.target.files[0] || null)}
-                      className="text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleUpload}
-                      disabled={uploading || !selectedFile}
-                      className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {uploading ? 'Enviando...' : 'Enviar transcrição e concluir sessão'}
-                    </button>
-                    <p className="text-[11px] text-gray-500">
-                      O arquivo será vinculado ao meeting e o status será marcado como concluído.
-                    </p>
+                  <div className="mt-3 space-y-4">
+                    <div className="space-y-2">
+                      <p className="text-xs uppercase text-gray-500">Prontuário informal</p>
+                      {noteError && (
+                        <p className="text-xs text-red-600">{noteError}</p>
+                      )}
+                      {noteSuccess && (
+                        <p className="text-xs text-green-600">{noteSuccess}</p>
+                      )}
+                      <textarea
+                        value={noteText}
+                        onChange={(e) => setNoteText(e.target.value)}
+                        rows={4}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+                        placeholder="Registre impressões ou encaminhamentos desta sessão. Fica visível apenas aqui."
+                      />
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveInformalNotes}
+                          disabled={savingNote}
+                          className="px-3 py-2 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {savingNote ? 'Salvando...' : 'Salvar anotações'}
+                        </button>
+                        <p className="text-[11px] text-gray-500 sm:text-right">
+                          Campo opcional para notas rápidas, sem alertas ou envios.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 border-t pt-3">
+                      <p className="text-xs uppercase text-gray-500">
+                        Enviar transcrição desta sessão
+                      </p>
+                      {uploadError && (
+                        <p className="text-xs text-red-600">{uploadError}</p>
+                      )}
+                      {uploadSuccess && (
+                        <p className="text-xs text-green-600">{uploadSuccess}</p>
+                      )}
+                      <input
+                        type="file"
+                        accept="audio/*,video/*"
+                        onChange={(e) => setSelectedFile(e.target.files[0] || null)}
+                        className="text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUpload}
+                        disabled={uploading || !selectedFile}
+                        className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {uploading ? 'Enviando...' : 'Enviar transcrição e concluir sessão'}
+                      </button>
+                      <p className="text-[11px] text-gray-500">
+                        O arquivo será vinculado ao meeting e o status será marcado como concluído.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="mt-3 space-y-2">

@@ -353,6 +353,8 @@ router.put('/:id', async (req, res) => {
       notes,
       status,
       meetLink,
+      completionNotes,
+      informalNotes,
     } = req.body;
 
     const updates = {
@@ -365,6 +367,8 @@ router.put('/:id', async (req, res) => {
     if (notes !== undefined) updates.notes = notes;
     if (status) updates.status = status;
     if (meetLink) updates.meetLink = meetLink;
+    if (completionNotes !== undefined) updates.completionNotes = completionNotes;
+    if (informalNotes !== undefined) updates.informalNotes = informalNotes;
 
     await docRef.update(updates);
 

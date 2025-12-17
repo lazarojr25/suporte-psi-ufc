@@ -675,6 +675,11 @@ export default function DiscenteDetalhe() {
                       <strong>Observações:</strong> {m.notes}
                     </p>
                   )}
+                  {m.informalNotes && (
+                    <p className="text-xs text-gray-700 mt-1">
+                      <strong>Prontuário informal:</strong> {m.informalNotes}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col items-start sm:items-end gap-1">
                   {renderMeetingStatusBadge(m)}
