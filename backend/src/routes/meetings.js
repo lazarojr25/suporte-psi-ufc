@@ -131,6 +131,7 @@ router.post('/', async (req, res) => {
       dateTime: dateTimeIso,
       meetLink: null,
       transcriptionId: null,
+      clinicalRecord: null,
     };
 
     const docRef = await db.collection('meetings').add(newMeeting);
@@ -355,6 +356,7 @@ router.put('/:id', async (req, res) => {
       meetLink,
       completionNotes,
       informalNotes,
+      clinicalRecord,
     } = req.body;
 
     const updates = {
@@ -369,6 +371,7 @@ router.put('/:id', async (req, res) => {
     if (meetLink) updates.meetLink = meetLink;
     if (completionNotes !== undefined) updates.completionNotes = completionNotes;
     if (informalNotes !== undefined) updates.informalNotes = informalNotes;
+    if (clinicalRecord !== undefined) updates.clinicalRecord = clinicalRecord;
 
     await docRef.update(updates);
 

@@ -675,6 +675,25 @@ export default function DiscenteDetalhe() {
                       <strong>Observações:</strong> {m.notes}
                     </p>
                   )}
+                  {m.clinicalRecord &&
+                    (m.clinicalRecord.summary ||
+                      m.clinicalRecord.observations ||
+                      m.clinicalRecord.plan) && (
+                      <div className="text-xs text-gray-700 mt-1 space-y-0.5">
+                        <p className="font-semibold text-gray-800">
+                          Registro clínico
+                        </p>
+                        {m.clinicalRecord.summary && (
+                          <p>• Síntese: {m.clinicalRecord.summary}</p>
+                        )}
+                        {m.clinicalRecord.observations && (
+                          <p>• Condutas: {m.clinicalRecord.observations}</p>
+                        )}
+                        {m.clinicalRecord.plan && (
+                          <p>• Próximos passos: {m.clinicalRecord.plan}</p>
+                        )}
+                      </div>
+                    )}
                   {m.informalNotes && (
                     <p className="text-xs text-gray-700 mt-1">
                       <strong>Prontuário informal:</strong> {m.informalNotes}

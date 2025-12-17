@@ -129,8 +129,8 @@ function buildDiscentePatterns(transcriptions = []) {
   };
 }
 
-function computeOverviewData() {
-  const all = transcriptionService.listTranscriptionsWithMetadata();
+async function computeOverviewData() {
+  const all = await transcriptionService.listTranscriptionsWithMetadata();
 
   const totalTranscriptions = all.length;
   const totalSizeBytes = all.reduce((sum, t) => sum + (t.size || 0), 0);
@@ -296,9 +296,9 @@ function computeOverviewData() {
  */
 
   // ===== /api/reports/overview =====
-  router.get('/overview', (req, res) => {
+  router.get('/overview', async (req, res) => {
     try {
-      const data = computeOverviewData();
+      const data = await computeOverviewData();
       res.json({
         success: true,
         ...data,
@@ -313,9 +313,9 @@ function computeOverviewData() {
     }
   });
 
-  router.get('/overview/export', (req, res) => {
+  router.get('/overview/export', async (req, res) => {
     try {
-      const data = computeOverviewData();
+      const data = await computeOverviewData();
       const { overview, byCourse, highlights, timeline, periodWithMostRequests } = data;
 
       const lines = [];
@@ -397,9 +397,9 @@ function computeOverviewData() {
     }
   });
 
-  router.get('/overview/export-pdf', (req, res) => {
+  router.get('/overview/export-pdf', async (req, res) => {
     try {
-      const data = computeOverviewData();
+      const data = await computeOverviewData();
       const { overview, byCourse, highlights, timeline, periodWithMostRequests } = data;
 
       res.setHeader('Content-Type', 'application/pdf');
@@ -513,10 +513,10 @@ function computeOverviewData() {
 
   // ===== /api/reports/by-course-details =====
   // Detalha temas, sentimentos e alunos por curso
-  router.get('/by-course-details', (req, res) => {
+  router.get('/by-course-details', async (req, res) => {
     try {
       const { course: courseFilter } = req.query;
-      const all = transcriptionService.listTranscriptionsWithMetadata();
+      const all = await transcriptionService.listTranscriptionsWithMetadata();
 
       // agrupa por curso
       const courseMap = new Map();
@@ -640,10 +640,10 @@ function computeOverviewData() {
   });
 
   // ===== /api/reports/by-discente/:discenteId =====
-  router.get('/by-discente/:discenteId', (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
+  router.get('/by-discente/:discenteId', async (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
     try {
       const { discenteId } = req.params;
-      const all = transcriptionService.listTranscriptionsWithMetadata();
+      const all = await transcriptionService.listTranscriptionsWithMetadata();
 
       const filtered = all.filter(
         (t) => t.metadata?.discenteId === discenteId
@@ -701,7 +701,7 @@ function computeOverviewData() {
   // ===== /api/reports/analytics =====
   router.get('/analytics', async (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
     try {
-      const transcriptions = transcriptionService.listTranscriptions();
+      const transcriptions = await transcriptionService.listTranscriptions();
 
       if (transcriptions.length === 0) {
         return res.json({
@@ -805,9 +805,9 @@ function computeOverviewData() {
   });
 
   // ===== /api/reports/export-json =====
-  router.get('/export-json', (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
+  router.get('/export-json', async (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
     try {
-      const transcriptions = transcriptionService.listTranscriptions();
+      const transcriptions = await transcriptionService.listTranscriptions();
 
       const exportData = {
         exportedAt: new Date().toISOString(),
@@ -842,9 +842,9 @@ function computeOverviewData() {
   });
 
   // ===== /api/reports/export-text =====
-  router.get('/export-text', (req, res) => {
+  router.get('/export-text', async (req, res) => {
     try {
-      const allTranscriptions = transcriptionService.listTranscriptionsWithMetadata();
+      const allTranscriptions = await transcriptionService.listTranscriptionsWithMetadata();
       let reportText = `Relatório de Transcrições - Exportado em: ${new Date().toISOString()}\n\n`;
       reportText += `Total de Transcrições: ${allTranscriptions.length}\n`;
       reportText += '==================================================\n\n';
@@ -891,12 +891,12 @@ function computeOverviewData() {
   });
 
   // ===== /api/reports/search =====
-  router.get('/search', (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
+  router.get('/search', async (req, res) => { // <--- Alterado: app.get para router.get e rota relativa
     try {
       const { solicitante, curso, dataInicio, dataFim, palavra } = req.query;
 
       let transcriptions =
-        transcriptionService.listTranscriptionsWithMetadata();
+        await transcriptionService.listTranscriptionsWithMetadata();
 
       if (solicitante) {
         const s = solicitante.toLowerCase();

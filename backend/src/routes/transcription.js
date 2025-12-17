@@ -320,9 +320,9 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
 });
 
 // GET /api/transcription/list
-router.get('/list', (req, res) => {
+router.get('/list', async (req, res) => {
   try {
-    const transcriptions = transcriptionService.listTranscriptionsWithMetadata();
+    const transcriptions = await transcriptionService.listTranscriptionsWithMetadata();
     res.json({ success: true, data: transcriptions });
   } catch (error) {
     console.error('Erro ao listar transcrições:', error);
@@ -335,12 +335,12 @@ router.get('/list', (req, res) => {
 });
 
 // GET /api/transcription/by-discente/:discenteId
-router.get('/by-discente/:discenteId', (req, res) => {
+router.get('/by-discente/:discenteId', async (req, res) => {
   try {
     const { discenteId } = req.params;
 
     // usa a versão com metadados
-    const all = transcriptionService.listTranscriptionsWithMetadata();
+    const all = await transcriptionService.listTranscriptionsWithMetadata();
 
     const filtered = all.filter(
       (t) => t.metadata?.discenteId === discenteId

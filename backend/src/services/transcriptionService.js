@@ -4,7 +4,10 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 import { GoogleGenAI } from '@google/genai';
-import { saveTranscriptionMetadata } from './firestoreService.js';
+import {
+  saveTranscriptionMetadata,
+  getAllTranscriptionsMetadata,
+} from './firestoreService.js';
 
 dotenv.config();
 
@@ -251,6 +254,14 @@ Retorne APENAS o JSON, sem markdown ou texto extra.`;
       analysis,
     };
 
+    try {
+      const firestoreId = await saveTranscriptionMetadata(newEntry);
+      if (firestoreId) {
+        newEntry.firestoreId = firestoreId;
+      }
+    } catch (error) {
+      console.warn('Não foi possível salvar metadados no Firestore, usando fallback local.', error?.message);
+    }
 
     const metadata = this.loadMetadata();
     metadata[fileName] = newEntry;
@@ -259,15 +270,25 @@ Retorne APENAS o JSON, sem markdown ou texto extra.`;
     return newEntry;
   }
 
-  // Lista transcrições com metadados (fallback local)
-  listTranscriptionsWithMetadata() {
+  // Lista transcrições com metadados (tenta Firestore primeiro, fallback local)
+  async listTranscriptionsWithMetadata() {
+    try {
+      const firestoreMetadata = await getAllTranscriptionsMetadata();
+      if (Array.isArray(firestoreMetadata) && firestoreMetadata.length > 0) {
+        return firestoreMetadata;
+      }
+    } catch (error) {
+      console.warn('Falha ao carregar metadados do Firestore, usando fallback local.', error?.message);
+    }
+
     const metadata = this.loadMetadata();
     return Object.values(metadata);
   }
 
   // Lista básica (nome + datas + tamanho)
-  listTranscriptions() {
-    return this.listTranscriptionsWithMetadata().map((t) => ({
+  async listTranscriptions() {
+    const list = await this.listTranscriptionsWithMetadata();
+    return list.map((t) => ({
       fileName: t.fileName,
       createdAt: t.createdAt,
       size: t.size,

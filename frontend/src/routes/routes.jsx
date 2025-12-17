@@ -17,6 +17,8 @@ import CadastroFuncionario from '../pages/CadastroFuncionario';
 import UploadTranscricao from '../pages/UploadTranscricao';
 import ConfigAtendimentos from '../pages/ConfigAtendimentos';
 import Agenda from '../pages/Agenda';
+import MeetingDetalhe from '../pages/MeetingDetalhe';
+import SolicitacaoDetalhe from '../pages/SolicitacaoDetalhe';
 
 // layout privado
 import PrivateLayout from '../layouts/PrivateLayout';
@@ -38,6 +40,8 @@ export default function AppRoutes() {
           <Route path="/agendar-atendimento/:solicitacaoId" element={<AgendarAtendimento />} />
           <Route path="/discentes" element={<ListaDiscentes />} />
           <Route path="/discentes/:discenteId" element={<DiscenteDetalhe />} />
+          <Route path="/solicitacoes/:solicitacaoId" element={<SolicitacaoDetalhe />} />
+          <Route path="/meetings/:meetingId" element={<MeetingDetalhe />} />
           <Route path="/gerenciar-solicitacoes" element={<GerenciarSolicitacoes />} />
           <Route path="/cadastro" element={<CadastroFuncionario />} />
           <Route path="/upload-transcricao" element={<UploadTranscricao />} />
