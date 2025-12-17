@@ -192,7 +192,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     const finalFileName = `${finalBaseName}.txt`;
 
     if (wavSizeMB <= SEGMENT_THRESHOLD_MB) {
-      // 🔹 Caso NORMAL: arquivo pequeno → transcreve direto, sem segmentação
+      // Caso normal: arquivo pequeno → transcreve direto, sem segmentação
       console.log(
         `Arquivo com ${wavSizeMB.toFixed(
           2
@@ -216,7 +216,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
 
       partResults = []; // sem partes
     } else {
-      // 🔹 Caso GRANDE: segmenta e depois gera apenas um arquivo FINAL
+      // Caso grande: segmenta e depois gera apenas um arquivo final
       console.log(
         `Arquivo com ${wavSizeMB.toFixed(
           2

@@ -24,15 +24,7 @@ export default function DiscenteDetalhe() {
   const [transcricoes, setTranscricoes] = useState([]);
   const [relatorioDiscente, setRelatorioDiscente] = useState(null);
 
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [sessionDate, setSessionDate] = useState(
-    new Date().toISOString().slice(0, 10) // hoje, YYYY-MM-DD
-  );
-  const [selectedMeetingId, setSelectedMeetingId] = useState('');
-
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
 
   // ⭐ Meetings do sistema (vamos filtrar por discente depois)
   const [allMeetings, setAllMeetings] = useState([]);
@@ -134,100 +126,6 @@ export default function DiscenteDetalhe() {
 
     loadData();
   }, [discenteId]);
-
-  const handleUpload = async () => {
-    if (!selectedFile || !discente) return;
-
-    setUploading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      // 1) Verifica limite de sessões no período (backend)
-      const check = await apiService.canScheduleForDiscente(discente.id);
-      console.log('Check limite antes do upload:', check);
-      if (check?.success && check.data) {
-        setScheduleInfo(check.data); // atualiza card
-        if (!check.data.allowed) {
-          setError(
-            `Limite de sessões atingido para o período ${check.data.periodStart} a ${check.data.periodEnd}.`
-          );
-          setUploading(false);
-          return;
-        }
-      }
-
-      // 2) Envia mídia + metadados
-      await apiService.uploadMedia(selectedFile, {
-        discenteId: discente.id,
-        studentName: discente.name || '',
-        studentEmail: discente.email || '',
-        studentId: discente.studentId || '',
-        curso: discente.curso || '',
-        meetingId: selectedMeetingId || '',
-        sessionDate, // data da sessão, usada no nome do arquivo e metadados
-      });
-
-      setSuccess('Transcrição enviada e processada com sucesso!');
-      setSelectedFile(null);
-      setSelectedMeetingId('');
-
-      // 3) Recarrega relatório/transcrições do discente
-      const rel = await apiService.getReportsByDiscente(discenteId);
-      if (rel?.success && rel.data) {
-        setRelatorioDiscente(rel.data);
-        setTranscricoes(rel.data.transcriptions || []);
-      }
-
-      // 3.1) Se houver meeting selecionado, marcar como concluída
-      if (selectedMeetingId) {
-        try {
-          await apiService.updateMeeting(selectedMeetingId, { status: 'concluida' });
-          setLoadingMeetings(true);
-          const respMeetings = await apiService.getMeetings();
-          if (respMeetings?.success && respMeetings.data?.meetings) {
-            setAllMeetings(respMeetings.data.meetings);
-            setMeetingsLoaded(true);
-          }
-        } catch (e) {
-          console.warn('Falha ao atualizar status da reunião:', e);
-        } finally {
-          setLoadingMeetings(false);
-        }
-      }
-
-      // 4) Recalcula limite após novo atendimento registrado
-      try {
-        const newCheck = await apiService.canScheduleForDiscente(discente.id);
-        if (newCheck?.success && newCheck.data) {
-          setScheduleInfo(newCheck.data);
-        }
-      } catch (e) {
-        console.warn('Falha ao atualizar limite de sessões:', e);
-      }
-
-      // 5) Recarregar meetings após nova sessão
-      try {
-        setLoadingMeetings(true);
-        const resp = await apiService.getMeetings();
-        if (resp?.success && resp.data?.meetings) {
-          meetingsCacheRef.current = resp.data.meetings;
-          setAllMeetings(resp.data.meetings);
-          setMeetingsLoaded(true);
-        }
-      } catch (mErr) {
-        console.warn('Falha ao recarregar meetings:', mErr);
-      } finally {
-        setLoadingMeetings(false);
-      }
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao enviar transcrição.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
   if (error && !discente) {
     return <div className="p-4 text-red-500">{error}</div>;
   }
@@ -709,6 +607,13 @@ export default function DiscenteDetalhe() {
                         : 'Sessão futura'}
                     </p>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/meetings/${m.id}`)}
+                    className="inline-flex items-center px-2 py-1 rounded-md border text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Ver sessão
+                  </button>
                   {m._statusNormalized !== 'concluida' && (
                     <button
                       type="button"
@@ -846,6 +751,13 @@ export default function DiscenteDetalhe() {
                     </div>
 
                     <div className="flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/solicitacoes/${s.id}`)}
+                        className="px-3 py-1.5 rounded-lg border text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Ver solicitação
+                      </button>
                       {!hasMeeting && !isBlockedByLimit && (
                         <button
                           type="button"
@@ -1052,77 +964,6 @@ export default function DiscenteDetalhe() {
         )}
       </div>
 
-      {/* Upload de transcrição */}
-      <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Upload de transcrição</h2>
-
-        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
-        {success && <p className="text-green-600 text-sm mb-2">{success}</p>}
-
-        {isBlockedByLimit && (
-          <p className="text-sm text-red-600 mb-3">
-            Este discente atingiu o limite de sessões para o período atual.  
-            Novas transcrições não podem ser registradas.
-          </p>
-        )}
-
-        <div className="flex flex-col sm:flex-row gap-3 mb-3 text-sm">
-          <div>
-            <label className="block mb-1 text-gray-700">
-              Data da sessão
-            </label>
-            <input
-              type="date"
-              value={sessionDate}
-              onChange={(e) => setSessionDate(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            />
-          </div>
-
-          <div>
-            <label className="block mb-1 text-gray-700">
-              Arquivo de áudio/vídeo
-            </label>
-            <input
-              type="file"
-              accept="audio/*,video/*"
-              onChange={(e) => setSelectedFile(e.target.files[0] || null)}
-              className="block"
-            />
-          </div>
-
-          <div className="flex-1 min-w-[220px]">
-            <label className="block mb-1 text-gray-700">
-              Vincular a uma sessão (opcional)
-            </label>
-            <select
-              value={selectedMeetingId}
-              onChange={(e) => setSelectedMeetingId(e.target.value)}
-              className="border rounded-lg px-3 py-2 w-full text-sm"
-            >
-              <option value="">Nenhuma</option>
-              {meetingsDiscente
-                .filter((m) => m.status !== 'concluida' && m.status !== 'cancelada')
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.scheduledDate} {m.scheduledTime ? `às ${m.scheduledTime}` : ''} — {m.status}
-                  </option>
-                ))}
-            </select>
-            <p className="text-[11px] text-gray-500 mt-1">
-              Ao enviar vinculado, a sessão será marcada como concluída.
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={handleUpload}
-          disabled={uploading || !selectedFile || isBlockedByLimit}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 text-sm"
-        >
-          {uploading ? 'Enviando...' : 'Enviar transcrição'}
-        </button>
-      </div>
     </div>
   );
 }

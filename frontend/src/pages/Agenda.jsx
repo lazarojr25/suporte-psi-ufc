@@ -386,6 +386,15 @@ export default function Agenda() {
                     <p className="text-xs text-gray-500">
                       Abra a solicitação para revisar dados e registrar uma sessão.
                     </p>
+                    {selectedEvent.status &&
+                      selectedEvent.status
+                        .toString()
+                        .toLowerCase()
+                        .includes('encontro agendado') && (
+                        <p className="text-xs text-amber-700">
+                          Esta solicitação já possui um encontro agendado.
+                        </p>
+                      )}
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -394,13 +403,21 @@ export default function Agenda() {
                       >
                         Ver solicitação
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/agendar-atendimento/${selectedEvent.id}`)}
-                        className="px-3 py-2 rounded-md border text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                      >
-                        Agendar sessão
-                      </button>
+                      {!(
+                        selectedEvent.status &&
+                        selectedEvent.status
+                          .toString()
+                          .toLowerCase()
+                          .includes('encontro agendado')
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/agendar-atendimento/${selectedEvent.id}`)}
+                          className="px-3 py-2 rounded-md border text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Agendar sessão
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

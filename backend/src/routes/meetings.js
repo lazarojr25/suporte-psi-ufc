@@ -98,6 +98,19 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Checa status da solicitação e bloqueia duplicidade
+    const solicitacaoRef = db.collection('solicitacoesAtendimento').doc(solicitacaoId);
+    const solicitacaoSnap = await solicitacaoRef.get();
+    if (solicitacaoSnap.exists) {
+      const statusRaw = (solicitacaoSnap.data()?.status || '').toString().toLowerCase();
+      if (statusRaw.includes('encontro agendado')) {
+        return res.status(409).json({
+          success: false,
+          message: 'Esta solicitação já possui um encontro agendado.',
+        });
+      }
+    }
+
     // Verificar se já existe reunião para esta solicitação
     const existingSnap = await db
       .collection('meetings')
@@ -137,6 +150,16 @@ router.post('/', async (req, res) => {
     const docRef = await db.collection('meetings').add(newMeeting);
 
     const saved = { id: docRef.id, ...newMeeting };
+
+    // Atualiza status da solicitação para "encontro agendado" (best-effort)
+    try {
+      await solicitacaoRef.set(
+        { status: 'encontro agendado', updatedAt: nowIso },
+        { merge: true }
+      );
+    } catch (sErr) {
+      console.warn('Falha ao atualizar status da solicitação após criar meeting:', sErr?.message);
+    }
 
     res.status(201).json({
       success: true,

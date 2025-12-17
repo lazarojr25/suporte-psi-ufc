@@ -13,6 +13,9 @@ export default function AgendarAtendimento() {
   const [solicitacao, setSolicitacao] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const isLocked =
+    solicitacao?.status &&
+    solicitacao.status.toString().toLowerCase() === 'encontro agendado';
   const navigate = useNavigate();
 
   // Recupera as informações da solicitação do Firebase
@@ -64,6 +67,10 @@ export default function AgendarAtendimento() {
       setError('Por favor, selecione data e horário');
       return;
     }
+    if (isLocked) {
+      setError('Já existe um encontro agendado para esta solicitação.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -88,10 +95,10 @@ export default function AgendarAtendimento() {
         throw new Error(response.message || 'Erro ao agendar consulta');
       }
 
-      // 🔹 Atualiza status da solicitação no Firestore
+      // Atualiza status da solicitação no Firestore
       const solicitacaoRef = doc(db, 'solicitacoesAtendimento', solicitacaoId);
       await updateDoc(solicitacaoRef, {
-        status: 'agendada',          // ou 'em_atendimento', 'agendada', etc.
+        status: 'encontro agendado',
         updatedAt: serverTimestamp() // opcional, pra ter histórico
       });
 
@@ -141,6 +148,11 @@ export default function AgendarAtendimento() {
               <p><strong>Email:</strong> {solicitacao.email}</p>
               <p><strong>Matrícula:</strong> {solicitacao.studentId}</p>
               <p><strong>Motivo:</strong> {solicitacao.motivation}</p>
+              {isLocked && (
+                <p className="text-sm text-amber-700 mt-2">
+                  Já existe um encontro agendado para esta solicitação. Não é possível agendar outro.
+                </p>
+              )}
             </div>
 
             <form onSubmit={handleAgendamento}>
@@ -206,7 +218,7 @@ export default function AgendarAtendimento() {
 
               <button
                 type="submit"
-                disabled={loading || !selectedDate || !selectedTime}
+                disabled={loading || !selectedDate || !selectedTime || isLocked}
                 className="w-full py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 {loading ? 'Agendando...' : 'Agendar Consulta'}
