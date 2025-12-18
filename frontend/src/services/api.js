@@ -201,6 +201,14 @@ class ApiService {
     return this.request('/health');
   }
   
+  // ------------------ Usuários (Admin SDK) ------------------
+  async createUserAdmin(payload) {
+    return this.request('/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // ------------------ Limite de sessões ------------------
 
   async canScheduleForDiscente(discenteId) {

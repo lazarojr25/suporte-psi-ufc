@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { auth } from '../services/firebase';
 import { signOut } from 'firebase/auth';
 
-export default function TopBar({ user }) {
+export default function TopBar({ user, role }) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -44,7 +44,7 @@ export default function TopBar({ user }) {
                   `${linkBase} ${isActive ? linkActive : linkInactive}`
                 }
               >
-                Gerenciar Solicitações
+                Solicitações
               </NavLink>
               <NavLink
                 to="/discentes"
@@ -54,21 +54,33 @@ export default function TopBar({ user }) {
               >
                 Discentes
               </NavLink>
+              {role === 'admin' && (
+                <NavLink
+                  to="/relatorios"
+                  className={({ isActive }) =>
+                    `${linkBase} ${isActive ? linkActive : linkInactive}`
+                  }
+                >
+                  Relatórios
+                </NavLink>
+              )}
+              {role === 'admin' && (
+                <NavLink
+                  to="/usuarios"
+                  className={({ isActive }) =>
+                    `${linkBase} ${isActive ? linkActive : linkInactive}`
+                  }
+                >
+                  Usuários
+                </NavLink>
+              )}
               <NavLink
-                to="/relatorios"
+                to="/configuracoes"
                 className={({ isActive }) =>
                   `${linkBase} ${isActive ? linkActive : linkInactive}`
                 }
               >
-                Relatórios
-              </NavLink>
-              <NavLink
-                to="/config-atendimentos"
-                className={({ isActive }) =>
-                  `${linkBase} ${isActive ? linkActive : linkInactive}`
-                }
-              >
-                Config. Atendimentos
+                Configurações
               </NavLink>
             </nav>
           </div>
@@ -94,14 +106,6 @@ export default function TopBar({ user }) {
         {/* navegação mobile */}
         <nav className="sm:hidden pb-3 flex gap-2">
           <NavLink
-            to="/relatorios"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkInactive}`
-            }
-          >
-            Relatórios
-          </NavLink>
-          <NavLink
             to="/agenda"
             className={({ isActive }) =>
               `${linkBase} ${isActive ? linkActive : linkInactive}`
@@ -115,8 +119,28 @@ export default function TopBar({ user }) {
               `${linkBase} ${isActive ? linkActive : linkInactive}`
             }
           >
-            Gerenciar Solicitações
+            Solicitações
           </NavLink>
+          {role === 'admin' && (
+            <NavLink
+              to="/relatorios"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkInactive}`
+              }
+            >
+              Relatórios
+            </NavLink>
+          )}
+          {role === 'admin' && (
+            <NavLink
+              to="/usuarios"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkInactive}`
+              }
+            >
+              Usuários
+            </NavLink>
+          )}
         </nav>
       </div>
     </header>

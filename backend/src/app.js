@@ -11,6 +11,7 @@ import reportsRouter from './routes/reports.js';
 import meetingRoutes from './routes/meetings.js';
 import attendanceConfigRoutes from './routes/attendanceConfig.js';
 import solicitacaoRoutes from './routes/solicitacoes.js';
+import usersRoutes from './routes/users.js';
 
 
 // Configurar __dirname para ES modules
@@ -50,6 +51,7 @@ app.use('/api/transcription', transcriptionRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/attendance-config', attendanceConfigRoutes);
 app.use('/api/solicitacoes', solicitacaoRoutes);
+app.use('/api/users', usersRoutes);
 
 
 app.use('/api/reports', reportsRouter);

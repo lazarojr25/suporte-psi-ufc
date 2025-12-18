@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../services/firebase'; // Instância do Firebase Auth
+import { auth, db } from '../services/firebase'; // Instância do Firebase Auth
 import { useNavigate } from 'react-router-dom';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function CadastroFuncionario() {
   const [email, setEmail] = useState('');
@@ -21,7 +22,16 @@ export default function CadastroFuncionario() {
 
     try {
       // Cria o usuário com e-mail e senha
-      await createUserWithEmailAndPassword(auth, email, senha);
+      const cred = await createUserWithEmailAndPassword(auth, email, senha);
+      try {
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          email: cred.user.email || '',
+          role: 'staff',
+          createdAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('Não foi possível criar doc do usuário:', e);
+      }
       navigate('/gerenciar-solicitacoes');  // Redireciona após sucesso
     } catch (err) {
       setErro('Erro ao criar o usuário: ' + err.message);

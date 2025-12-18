@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/firebase';
 import {
   collection,
@@ -12,6 +12,11 @@ export default function GerenciarSolicitacoes() {
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchName, setSearchName] = useState('');
+  const [searchMatricula, setSearchMatricula] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [curso, setCurso] = useState('');
 
   const navigate = useNavigate();
 
@@ -63,6 +68,13 @@ export default function GerenciarSolicitacoes() {
     });
   };
 
+  const toDate = (value) => {
+    if (!value) return null;
+    if (typeof value.toDate === 'function') return value.toDate();
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
   const normalizeStatus = (statusRaw) => {
     if (!statusRaw) return 'pendente';
     const normalized = statusRaw
@@ -103,16 +115,40 @@ export default function GerenciarSolicitacoes() {
   };
 
   // Separa por status
-  const pendentes = solicitacoes.filter(
+  const filteredSolicitacoes = useMemo(() => {
+    const termName = searchName.trim().toLowerCase();
+    const termMat = searchMatricula.trim().toLowerCase();
+    const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+    const end = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
+
+    return solicitacoes.filter((s) => {
+      const created = toDate(s.createdAt);
+      if (start && (!created || created < start)) return false;
+      if (end && (!created || created > end)) return false;
+
+      const nameMatch = termName
+        ? (s.name || s.studentName || '').toLowerCase().includes(termName)
+        : true;
+      const matMatch = termMat
+        ? (s.studentId || '').toLowerCase().includes(termMat)
+        : true;
+      const cursoMatch = curso
+        ? (s.curso || '').toLowerCase() === curso.toLowerCase()
+        : true;
+      return nameMatch && matMatch && cursoMatch;
+    });
+  }, [solicitacoes, searchName, searchMatricula, startDate, endDate, curso]);
+
+  const pendentes = filteredSolicitacoes.filter(
     (s) => normalizeStatus(s.status) === 'pendente'
   );
-  const agendadas = solicitacoes.filter(
+  const agendadas = filteredSolicitacoes.filter(
     (s) => normalizeStatus(s.status) === 'agendada'
   );
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white rounded-2xl shadow-md w-full max-w-5xl p-6">
+    <div className="min-h-screen bg-gray-100 py-6 px-4">
+      <div className="bg-white rounded-2xl shadow-md w-full max-w-6xl mx-auto p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-2xl font-bold">Gerenciar Solicitações</h2>
@@ -131,9 +167,70 @@ export default function GerenciarSolicitacoes() {
               <strong className="text-emerald-700">{agendadas.length}</strong>
             </span>
             <span>
-              Total:{' '}
-              <strong className="text-gray-900">{solicitacoes.length}</strong>
+              Total filtrado:{' '}
+              <strong className="text-gray-900">{filteredSolicitacoes.length}</strong>
             </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-sm">
+          <div className="md:col-span-2">
+            <label className="block text-xs uppercase text-gray-600 mb-1">
+              Nome
+            </label>
+              <input
+                type="text"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                placeholder="Buscar por nome"
+                className="w-full border rounded-lg px-3 py-2"
+              />
+          </div>
+          <div>
+            <label className="block text-xs uppercase text-gray-600 mb-1">
+              Matrícula
+            </label>
+            <input
+              type="text"
+              value={searchMatricula}
+              onChange={(e) => setSearchMatricula(e.target.value)}
+              placeholder="Buscar por matrícula"
+              className="w-full border rounded-lg px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="block text-xs uppercase text-gray-600 mb-1">
+              Curso
+            </label>
+            <input
+              type="text"
+              value={curso}
+              onChange={(e) => setCurso(e.target.value)}
+              placeholder="Curso ex: Engenharia de Software"
+              className="w-full border rounded-lg px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="block text-xs uppercase text-gray-600 mb-1">
+              Início
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="block text-xs uppercase text-gray-600 mb-1">
+              Fim
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2"
+            />
           </div>
         </div>
 
@@ -145,9 +242,9 @@ export default function GerenciarSolicitacoes() {
           <p className="text-sm text-red-600 mb-3">{error}</p>
         )}
 
-        {!loading && !error && solicitacoes.length === 0 && (
+        {!loading && !error && filteredSolicitacoes.length === 0 && (
           <p className="text-sm text-gray-500">
-            Não há solicitações cadastradas no momento.
+            Nenhuma solicitação encontrada com os filtros atuais.
           </p>
         )}
 
