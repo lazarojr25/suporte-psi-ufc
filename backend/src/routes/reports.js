@@ -424,50 +424,90 @@ async function computeOverviewData() {
   router.get('/overview/export', async (req, res) => {
     try {
       const data = await computeOverviewData();
-      const { overview, byCourse, highlights, timeline, periodWithMostRequests, solicitacoes } = data;
+      const {
+        overview,
+        byCourse,
+        highlights,
+        timeline,
+        solicitacoes,
+        comparativo,
+        atendimentosTimeline,
+      } = data;
 
       const lines = [];
-      lines.push('Relatório geral de atendimentos');
+      lines.push('====================================================');
+      lines.push(' Relatório geral de atendimentos');
+      lines.push('====================================================');
       lines.push(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
       lines.push('');
-      lines.push(`Total de transcrições: ${overview.totalTranscriptions}`);
-      lines.push(`Total de discentes atendidos: ${overview.totalStudents}`);
-      lines.push(`Tamanho total (KB): ${Math.round((overview.totalSizeBytes || 0) / 1024)}`);
-      lines.push(`Tamanho médio por registro (KB): ${Math.round((overview.avgSizeBytes || 0) / 1024)}`);
-      lines.push(`Solicitações registradas: ${solicitacoes?.total ?? 0}`);
+      lines.push('> Visão geral');
+      lines.push(`- Total de transcrições: ${overview.totalTranscriptions}`);
+      lines.push(`- Discentes atendidos: ${overview.totalStudents}`);
+      lines.push(`- Solicitações registradas: ${solicitacoes?.total ?? 0}`);
+      lines.push(`- Tamanho total (KB): ${Math.round((overview.totalSizeBytes || 0) / 1024)}`);
+      lines.push(`- Tamanho médio por registro (KB): ${Math.round((overview.avgSizeBytes || 0) / 1024)}`);
 
       if (overview.sentimentsAvg) {
-        lines.push('Sentimento médio geral:');
+        lines.push('- Sentimento médio:');
         lines.push(
-          `- Positivo: ${(overview.sentimentsAvg.positive * 100).toFixed(1)}% | Neutro: ${(overview.sentimentsAvg.neutral * 100).toFixed(1)}% | Negativo: ${(overview.sentimentsAvg.negative * 100).toFixed(1)}%`
+          `  • Positivo: ${(overview.sentimentsAvg.positive * 100).toFixed(1)}%`
+        );
+        lines.push(
+          `  • Neutro: ${(overview.sentimentsAvg.neutral * 100).toFixed(1)}%`
+        );
+        lines.push(
+          `  • Negativo: ${(overview.sentimentsAvg.negative * 100).toFixed(1)}%`
         );
       }
 
-      if (periodWithMostRequests) {
+      if (comparativo?.length) {
+        const totalSolic = solicitacoes?.total ?? 0;
+        const totalAtend = overview.totalTranscriptions;
+        const taxaAtendimento =
+          totalSolic > 0 ? ((totalAtend / totalSolic) * 100).toFixed(1) : 'N/A';
         lines.push('');
-        lines.push(
-          `Período com mais solicitações: ${periodWithMostRequests.periodLabel} (${periodWithMostRequests.count} atendimentos)`
-        );
+        lines.push('> Conversão geral (Solicitações -> Atendimentos concluídos)');
+        lines.push(`- Atendimentos concluídos: ${totalAtend}`);
+        lines.push(`- Solicitações recebidas: ${totalSolic}`);
+        lines.push(`- Taxa de atendimento: ${taxaAtendimento}%`);
       }
 
       if (timeline.length > 0) {
-      lines.push('');
-      lines.push('Distribuição mensal de atendimentos (transcrições):');
-      timeline.forEach((entry) => {
-        lines.push(`- ${entry.periodLabel}: ${entry.count}`);
-      });
+        lines.push('');
+        lines.push('> Atendimentos concluídos por mês (transcrições)');
+        timeline.forEach((entry) => {
+          lines.push(`- ${entry.periodLabel}: ${entry.count}`);
+        });
+      }
+
+      if (atendimentosTimeline?.length) {
+        lines.push('');
+        lines.push('> Atendimentos concluídos (ajustado)');
+        atendimentosTimeline.forEach((entry) => {
+          lines.push(`- ${entry.periodLabel}: ${entry.count ?? entry.atendimentosConcluidos ?? 0}`);
+        });
+      }
 
       if (solicitacoes?.timeline?.length) {
         lines.push('');
-        lines.push('Distribuição mensal de solicitações:');
+        lines.push('> Solicitações por mês');
         solicitacoes.timeline.forEach((entry) => {
           lines.push(`- ${entry.periodLabel}: ${entry.count}`);
         });
       }
+
+      if (comparativo?.length) {
+        lines.push('');
+        lines.push('> Comparativo Solicitações x Atendimentos');
+        comparativo.forEach((entry) => {
+          lines.push(
+            `- ${entry.periodLabel}: ${entry.solicitacoes} solicitações | ${entry.atendimentosConcluidos} atendimentos`
+          );
+        });
       }
 
       lines.push('');
-      lines.push('Distribuição por curso:');
+      lines.push('> Distribuição por curso');
       if (byCourse.length === 0) {
         lines.push('- Nenhum curso encontrado');
       } else {
@@ -479,7 +519,7 @@ async function computeOverviewData() {
       }
 
       lines.push('');
-      lines.push('Principais palavras-chave:');
+      lines.push('> Principais palavras-chave');
       if (!highlights.topKeywords?.length) {
         lines.push('- Nenhum dado disponível');
       } else {
@@ -489,7 +529,7 @@ async function computeOverviewData() {
       }
 
       lines.push('');
-      lines.push('Principais tópicos:');
+      lines.push('> Principais tópicos');
       if (!highlights.topTopics?.length) {
         lines.push('- Nenhum dado disponível');
       } else {
@@ -517,7 +557,15 @@ async function computeOverviewData() {
   router.get('/overview/export-pdf', async (req, res) => {
     try {
       const data = await computeOverviewData();
-      const { overview, byCourse, highlights, timeline, periodWithMostRequests, solicitacoes } = data;
+      const {
+        overview,
+        byCourse,
+        highlights,
+        timeline,
+        solicitacoes,
+        comparativo,
+        atendimentosTimeline,
+      } = data;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
@@ -559,29 +607,45 @@ async function computeOverviewData() {
         );
       }
 
-      if (periodWithMostRequests) {
+      if (comparativo?.length) {
         doc.moveDown();
-        doc.fontSize(14).text('Período com mais solicitações', { underline: true });
-        doc.moveDown(0.5);
-        doc.fontSize(12).text(periodWithMostRequests.periodLabel);
-        doc.text(`${periodWithMostRequests.count} atendimentos registrados.`);
+        doc.fontSize(14).text('Conversão geral', { underline: true });
+        const totalSolic = solicitacoes?.total ?? 0;
+        const totalAtend = overview.totalTranscriptions;
+        const taxaAtendimento =
+          totalSolic > 0 ? ((totalAtend / totalSolic) * 100).toFixed(1) : 'N/A';
+        doc.moveDown(0.3);
+        doc.fontSize(12).text(`Atendimentos concluídos: ${totalAtend}`);
+        doc.text(`Solicitações recebidas: ${totalSolic}`);
+        doc.text(`Taxa de atendimento: ${taxaAtendimento}%`);
       }
 
-      if (timeline.length > 0) {
+      if (atendimentosTimeline?.length) {
         doc.moveDown();
-        doc.fontSize(14).text('Evolução mensal (transcrições)', { underline: true });
-        doc.moveDown(0.5);
-        timeline.forEach((entry) => {
-          doc.fontSize(12).text(`${entry.periodLabel}: ${entry.count} atendimentos`);
+        doc.fontSize(14).text('Atendimentos concluídos por mês', { underline: true });
+        doc.moveDown(0.3);
+        atendimentosTimeline.forEach((entry) => {
+          doc.fontSize(12).text(`${entry.periodLabel}: ${entry.count ?? entry.atendimentosConcluidos ?? 0}`);
         });
       }
 
       if (solicitacoes?.timeline?.length) {
         doc.moveDown();
         doc.fontSize(14).text('Solicitações por mês', { underline: true });
-        doc.moveDown(0.5);
+        doc.moveDown(0.3);
         solicitacoes.timeline.forEach((entry) => {
           doc.fontSize(12).text(`${entry.periodLabel}: ${entry.count} solicitações`);
+        });
+      }
+
+      if (comparativo?.length) {
+        doc.moveDown();
+        doc.fontSize(14).text('Comparativo Solicitações x Atendimentos', { underline: true });
+        doc.moveDown(0.3);
+        comparativo.forEach((entry) => {
+          doc.text(
+            `${entry.periodLabel}: ${entry.solicitacoes} solicitações | ${entry.atendimentosConcluidos} atendimentos`
+          );
         });
       }
 
