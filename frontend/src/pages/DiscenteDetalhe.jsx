@@ -32,6 +32,10 @@ export default function DiscenteDetalhe() {
   const [reprocessErr, setReprocessErr] = useState(null);
   const [reprocessing, setReprocessing] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [timelineFilter, setTimelineFilter] = useState('all');
+  const [selectedTranscription, setSelectedTranscription] = useState(null);
+  const [downloadingDiscenteReport, setDownloadingDiscenteReport] = useState(false);
+  const [downloadingDiscenteReportPdf, setDownloadingDiscenteReportPdf] = useState(false);
 
   // ⭐ Meetings do sistema (vamos filtrar por discente depois)
   const [allMeetings, setAllMeetings] = useState([]);
@@ -148,16 +152,6 @@ export default function DiscenteDetalhe() {
     return dateB - dateA;
   });
   const lastTranscription = orderedTranscricoes[0] || null;
-  const aggregatedInsights = orderedTranscricoes
-    .flatMap((t) =>
-      (t.analysis?.actionableInsights || []).map((insight) => ({
-        insight,
-        fileName: t.fileName,
-        createdAt: t.createdAt,
-      }))
-    )
-    .slice(0, 6);
-  const insightsHighlight = aggregatedInsights.slice(0, 2);
   const sentimentTimeline = orderedTranscricoes
     .filter((t) => t.analysis?.sentiments)
     .map((t) => ({
@@ -166,45 +160,6 @@ export default function DiscenteDetalhe() {
         : '---',
       sentiments: t.analysis.sentiments,
     }));
-
-  const negativeTrendAlert = (() => {
-    if (sentimentTimeline.length < 2) return null;
-    const last = sentimentTimeline[0].sentiments;
-    const prevAvg = sentimentTimeline
-      .slice(1, 4)
-      .reduce(
-        (acc, s, idx, arr) => {
-          acc.positive += s.sentiments.positive || 0;
-          acc.negative += s.sentiments.negative || 0;
-          return idx === arr.length - 1 ? acc : acc;
-        },
-        { positive: 0, negative: 0 }
-      );
-    const prevCount = Math.min(3, sentimentTimeline.length - 1);
-    if (prevCount > 0) {
-      prevAvg.positive /= prevCount;
-      prevAvg.negative /= prevCount;
-    }
-    const negDiff = (last.negative || 0) - (prevAvg.negative || 0);
-    const posDiff = (last.positive || 0) - (prevAvg.positive || 0);
-    if (negDiff >= 0.15 || posDiff <= -0.15) {
-      return 'Tendência de piora nos sentimentos recentes.';
-    }
-    return null;
-  })();
-
-  const dedupInsights = (() => {
-    const map = new Map();
-    orderedTranscricoes.forEach((t) => {
-      (t.analysis?.actionableInsights || []).forEach((insight) => {
-        if (!insight) return;
-        map.set(insight, (map.get(insight) || 0) + 1);
-      });
-    });
-    return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([text, count]) => ({ text, count }));
-  })();
 
   const handleReprocessDiscente = async () => {
     setReprocessing(true);
@@ -254,11 +209,61 @@ export default function DiscenteDetalhe() {
       setCreatingSession(false);
     }
   };
+
+  const handleDownloadDiscenteReport = async () => {
+    if (!discente) return;
+    try {
+      setDownloadingDiscenteReport(true);
+      const { blob, fileName } = await apiService.exportReportByDiscente(discente.id);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName || `relatorio-discente-${discente.id}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      if (err?.message?.includes('401')) {
+        alert('Sessão expirada ou sem permissão. Faça login novamente.');
+      } else {
+        alert('Não foi possível gerar o relatório do discente.');
+      }
+    } finally {
+      setDownloadingDiscenteReport(false);
+    }
+  };
+
+  const handleDownloadDiscenteReportPdf = async () => {
+    if (!discente) return;
+    try {
+      setDownloadingDiscenteReportPdf(true);
+      const { blob, fileName } = await apiService.exportReportByDiscentePdf(discente.id);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName || `relatorio-discente-${discente.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      if (err?.message?.includes('401')) {
+        alert('Sessão expirada ou sem permissão. Faça login novamente.');
+      } else {
+        alert('Não foi possível gerar o relatório do discente em PDF.');
+      }
+    } finally {
+      setDownloadingDiscenteReportPdf(false);
+    }
+  };
   const historyListSections = [
     { key: 'recurringThemes', label: 'Temas recorrentes' },
     { key: 'repeatedIdeas', label: 'Ideias repetidas' },
     { key: 'emotionalPatterns', label: 'Padrões emocionais' },
-    { key: 'commonTriggers', label: 'Gatilhos comuns' },
+    { key: 'commonTriggers', label: 'Sugestão de ações' },
   ];
 
   const periodStartValue =
@@ -457,19 +462,66 @@ export default function DiscenteDetalhe() {
     );
   };
 
-  // Solicitações + meeting vinculada
-  const solicitacoesEnriquecidas = solicitacoes
-    .map((s) => {
-      const relatedMeeting =
-        meetingsDiscente.find((m) => m.solicitacaoId === s.id) || null;
-      return { ...s, relatedMeeting };
-    })
-    .sort((a, b) => {
-      const da = a.createdAt ? new Date(a.createdAt) : null;
-      const db = b.createdAt ? new Date(b.createdAt) : null;
-      if (!da || !db) return 0;
-      return db - da; // mais recente primeiro
+  const timelineTypeStyles = {
+    solicitacao: 'bg-amber-50 text-amber-800 border border-amber-200',
+    sessao: 'bg-blue-50 text-blue-800 border border-blue-200',
+    transcricao: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
+  };
+  const timelineTypeLabels = {
+    solicitacao: 'Solicitação',
+    sessao: 'Sessão',
+    transcricao: 'Transcrição',
+  };
+
+  const timelineItems = (() => {
+    const items = [];
+
+    solicitacoes.forEach((s) => {
+      const date = s.createdAt ? new Date(s.createdAt) : null;
+      if (!date || Number.isNaN(date.getTime())) return;
+      items.push({
+        type: 'solicitacao',
+        title: 'Solicitação de atendimento',
+        description: s.motivation || 'Solicitação registrada',
+        status: s.status,
+        date,
+      });
     });
+
+    meetingsDiscente.forEach((m) => {
+      const date = m._dateObj || getMeetingDate(m);
+      if (!date || Number.isNaN(date.getTime())) return;
+      items.push({
+        type: 'sessao',
+        title: 'Sessão agendada/registrada',
+        description: m.notes || m.clinicalRecord?.summary || 'Sessão criada',
+        status: m.status,
+        date,
+      });
+    });
+
+    orderedTranscricoes.forEach((t) => {
+      const date = t.createdAt ? new Date(t.createdAt) : null;
+      if (!date || Number.isNaN(date.getTime())) return;
+      items.push({
+        type: 'transcricao',
+        title: t.fileName || 'Transcrição',
+        description: t.analysis?.summary || 'Transcrição registrada',
+        status: t.analysis?.sentiments ? 'Com análise' : 'Sem análise',
+        date,
+      });
+    });
+
+    return items
+      .filter((item) => item.date)
+      .sort((a, b) => b.date - a.date)
+      .slice(0, 30);
+  })();
+
+  const filteredTimelineItems =
+    timelineFilter === 'all'
+      ? timelineItems
+      : timelineItems.filter((item) => item.type === timelineFilter);
 
   return (
     <div className="p-4 max-w-5xl mx-auto space-y-6">
@@ -634,291 +686,31 @@ export default function DiscenteDetalhe() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow p-4 space-y-3">
-          <p className="text-xs uppercase text-gray-500 tracking-wide">
-            Insights em foco
-          </p>
-          {negativeTrendAlert && (
-            <p className="text-xs text-red-600">
-              {negativeTrendAlert}
-            </p>
-          )}
-          {insightsHighlight.length > 0 ? (
-            <ul className="space-y-2">
-              {insightsHighlight.map((item, idx) => (
-                <li
-                  key={`${item.fileName}-${idx}`}
-                  className="text-xs text-gray-700 bg-gray-50 rounded-lg p-2"
-                >
-                  {item.insight}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-gray-500">
-              Sem recomendações recentes. As próximas transcrições alimentarão este painel automaticamente.
-            </p>
-          )}
-          {historyPatterns?.recurringThemes?.length > 0 && (
-            <p className="text-xs text-gray-500">
-              Temas recorrentes:&nbsp;
-              <span className="text-gray-800">
-                {historyPatterns.recurringThemes.join(', ')}
-              </span>
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Histórico de sessões (meetings) */}
-      <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Histórico de sessões</h2>
-
-        {loadingMeetings ? (
-          <p className="text-sm text-gray-500">Carregando sessões...</p>
-        ) : meetingsDiscente.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            Nenhuma sessão registrada para este discente.
-          </p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {meetingsDiscente.map((m) => (
-              <li
-                key={m.id}
-                className="border rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-              >
-                <div>
-                  <p className="font-medium text-gray-800">
-                    {m.scheduledDate}{' '}
-                    {m.scheduledTime && (
-                      <span>às {m.scheduledTime}</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Criada em:{' '}
-                    {m.createdAt
-                      ? new Date(m.createdAt).toLocaleString('pt-BR')
-                      : '---'}
-                  </p>
-                  {m.notes && (
-                    <p className="text-xs text-gray-700 mt-1">
-                      <strong>Observações:</strong> {m.notes}
-                    </p>
-                  )}
-                  {m.clinicalRecord &&
-                    (m.clinicalRecord.summary ||
-                      m.clinicalRecord.observations ||
-                      m.clinicalRecord.plan) && (
-                      <div className="text-xs text-gray-700 mt-1 space-y-0.5">
-                        <p className="font-semibold text-gray-800">
-                          Registro clínico
-                        </p>
-                        {m.clinicalRecord.summary && (
-                          <p>• Síntese: {m.clinicalRecord.summary}</p>
-                        )}
-                        {m.clinicalRecord.observations && (
-                          <p>• Condutas: {m.clinicalRecord.observations}</p>
-                        )}
-                        {m.clinicalRecord.plan && (
-                          <p>• Próximos passos: {m.clinicalRecord.plan}</p>
-                        )}
-                      </div>
-                    )}
-                  {m.informalNotes && (
-                    <p className="text-xs text-gray-700 mt-1">
-                      <strong>Prontuário informal:</strong> {m.informalNotes}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-col items-start sm:items-end gap-1">
-                  {renderMeetingStatusBadge(m)}
-                  {m._dateObj && (
-                    <p className="text-[11px] text-gray-500">
-                      {m._isPast
-                        ? 'Sessão em data já passada'
-                        : 'Sessão futura'}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/meetings/${m.id}`)}
-                    className="inline-flex items-center px-2 py-1 rounded-md border text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    Ver sessão
-                  </button>
-                  {m._statusNormalized !== 'concluida' && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setLoadingMeetings(true);
-                        try {
-                          await apiService.updateMeeting(m.id, { status: 'concluida' });
-                          const resp = await apiService.getMeetings();
-                          if (resp?.success && resp.data?.meetings) {
-                            meetingsCacheRef.current = resp.data.meetings;
-                            setAllMeetings(resp.data.meetings);
-                            try {
-                              const check = await apiService.canScheduleForDiscente(discente.id);
-                              if (check?.success && check.data) {
-                                setScheduleInfo(check.data);
-                              }
-                            } catch (e) {
-                              console.warn('Falha ao atualizar limite de sessões:', e);
-                            }
-                          }
-                        } catch (err) {
-                          console.error(err);
-                          alert('Não foi possível concluir a sessão.');
-                        } finally {
-                          setLoadingMeetings(false);
-                        }
-                      }}
-                      className="mt-1 inline-flex items-center px-2 py-1 rounded-md bg-green-600 text-white text-[11px] font-semibold hover:bg-green-700"
-                    >
-                      Marcar como concluída
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Solicitações */}
-      <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Solicitações desse discente</h2>
-
-        {solicitacoesEnriquecidas.length === 0 ? (
-          <p className="text-gray-500 text-sm">Nenhuma solicitação encontrada.</p>
-        ) : (
-          <ul className="space-y-3 text-sm">
-            {solicitacoesEnriquecidas.map((s) => {
-              const m = s.relatedMeeting;
-              const hasMeeting = !!m;
-
-              // cálculo se a sessão é passada/hoje/futura
-              let temporalLabel = null;
-              let temporalClasses = '';
-              if (hasMeeting) {
-                const dateTimeStr =
-                  m.dateTime ||
-                  (m.scheduledDate
-                    ? `${m.scheduledDate}T${(m.scheduledTime || '00:00')}:00`
-                    : null);
-
-                const dt = dateTimeStr ? new Date(dateTimeStr) : null;
-
-                if (dt && !isNaN(dt.getTime())) {
-                  const todayStr = new Date().toISOString().slice(0, 10);
-                  const meetingDateStr = dt.toISOString().slice(0, 10);
-
-                  if (meetingDateStr < todayStr) {
-                    temporalLabel = 'Sessão já realizada';
-                    temporalClasses =
-                      'bg-gray-100 text-gray-700 border border-gray-200';
-                  } else if (meetingDateStr === todayStr) {
-                    temporalLabel = 'Sessão hoje';
-                    temporalClasses =
-                      'bg-yellow-50 text-yellow-800 border border-yellow-200';
-                  } else {
-                    temporalLabel = 'Sessão futura';
-                    temporalClasses =
-                      'bg-emerald-50 text-emerald-800 border border-emerald-200';
-                  }
-                }
-              }
-
-              return (
-                <li
-                  key={s.id}
-                  className="border rounded-lg p-3 flex flex-col gap-2 bg-gray-50"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        Motivo: {s.motivation}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Criada em:{' '}
-                        {s.createdAt
-                          ? new Date(s.createdAt).toLocaleString('pt-BR')
-                          : '---'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {renderSolicitacaoStatusBadge(s.status)}
-                    </div>
-                  </div>
-
-                  <div className="mt-1 border-t pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div className="text-xs text-gray-700">
-                      {hasMeeting ? (
-                        <>
-                          <p className="font-semibold mb-0.5">
-                            Sessão vinculada:
-                          </p>
-                          <p>
-                            {m.scheduledDate}{' '}
-                            {m.scheduledTime && `às ${m.scheduledTime}`}
-                          </p>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            {renderMeetingStatusBadge(m)}
-
-                            {temporalLabel && (
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${temporalClasses}`}
-                              >
-                                {temporalLabel}
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <p className="text-gray-600">
-                          Nenhuma sessão agendada para esta solicitação.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2 justify-end">
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/solicitacoes/${s.id}`)}
-                        className="px-3 py-1.5 rounded-lg border text-xs font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        Ver solicitação
-                      </button>
-                      {!hasMeeting && !isBlockedByLimit && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            navigate(`/agendar-atendimento/${s.id}`)
-                          }
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
-                        >
-                          Agendar sessão
-                        </button>
-                      )}
-
-                      {hasMeeting && (
-                        <span className="text-[11px] text-gray-500">
-                          ID reunião: {m.id}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
       </div>
 
       {/* Relatório e transcrições do discente */}
       <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="text-lg font-semibold mb-3">Transcrições e análise desse discente</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+          <h2 className="text-lg font-semibold">Transcrições e análise desse discente</h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadDiscenteReport}
+              disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf}
+              className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+            >
+              {downloadingDiscenteReport ? 'Gerando...' : 'Baixar TXT'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadDiscenteReportPdf}
+              disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf}
+              className="px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {downloadingDiscenteReportPdf ? 'Gerando PDF...' : 'Baixar PDF'}
+            </button>
+          </div>
+        </div>
 
         {!relatorioDiscente && orderedTranscricoes.length === 0 ? (
           <p className="text-gray-500 text-sm">
@@ -959,36 +751,7 @@ export default function DiscenteDetalhe() {
               </div>
             )}
 
-            {Boolean(aggregatedInsights.length) && (
-              <div className="mb-4 border rounded-lg p-4 bg-white text-sm shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-gray-800">
-                    Insights acionáveis recomendados
-                  </h3>
-                  <span className="text-xs text-gray-500">
-                    {aggregatedInsights.length} sugest{aggregatedInsights.length > 1 ? 'ões' : 'ão'} recentes
-                  </span>
-                </div>
-                <ul className="space-y-2">
-                  {aggregatedInsights.map((item, index) => (
-                    <li
-                      key={`${item.fileName}-${index}`}
-                      className="border rounded-lg p-3 bg-gray-50"
-                    >
-                      <p className="text-gray-800">{item.insight}</p>
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        Extraído de{' '}
-                        <span className="font-semibold">{item.fileName}</span>{' '}
-                        {item.createdAt &&
-                          `(${new Date(item.createdAt).toLocaleDateString('pt-BR')})`}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Padrões históricos (IA) */}
+            {/* Único bloco de padrões percebidos */}
             {historyPatterns && (
               <div className="mb-4 border rounded-lg p-4 bg-gray-50 text-sm">
                 <h3 className="font-semibold mb-3 text-gray-800">
@@ -1010,126 +773,475 @@ export default function DiscenteDetalhe() {
                     );
                   })}
                 </div>
-            {!historyListSections.some(
-              (section) =>
-                Array.isArray(historyPatterns?.[section.key]) &&
-                historyPatterns[section.key].length > 0
-            ) && (
-              <p className="text-gray-500">Nenhum padrão identificado até o momento.</p>
+                {!historyListSections.some(
+                  (section) =>
+                    Array.isArray(historyPatterns?.[section.key]) &&
+                    historyPatterns[section.key].length > 0
+                ) && (
+                  <p className="text-gray-500">Nenhum padrão identificado até o momento.</p>
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {sentimentTimeline.length > 0 && (
-          <div className="mb-4 border rounded-lg p-4 bg-white text-sm">
-            <h3 className="font-semibold mb-2 text-gray-800">Linha do tempo de sentimentos</h3>
-            <ul className="space-y-1">
-              {sentimentTimeline.map((item, idx) => (
-                <li key={`${item.dateLabel}-${idx}`} className="flex flex-wrap justify-between">
-                  <span className="text-gray-700">{item.dateLabel}</span>
-                  <span className="text-[11px] text-gray-600">
-                    +{((item.sentiments.positive || 0) * 100).toFixed(0)}% /
-                    ~{((item.sentiments.neutral || 0) * 100).toFixed(0)}% /
-                    -{((item.sentiments.negative || 0) * 100).toFixed(0)}%
+            {sentimentTimeline.length > 0 && (
+              <div className="mb-4 border rounded-lg p-4 bg-white text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-gray-800">Linha do tempo de sentimentos</h3>
+                  <span className="text-[11px] text-gray-500">
+                    Distribuição de positivo / neutro / negativo
                   </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                </div>
+                <ul className="space-y-2">
+                  {sentimentTimeline.map((item, idx) => {
+                    const pos = Math.round((item.sentiments.positive || 0) * 100);
+                    const neu = Math.round((item.sentiments.neutral || 0) * 100);
+                    const neg = Math.round((item.sentiments.negative || 0) * 100);
+                    return (
+                      <li
+                        key={`${item.dateLabel}-${idx}`}
+                        className="space-y-1"
+                      >
+                        <div className="flex items-center justify-between text-xs text-gray-600">
+                          <span className="font-semibold text-gray-800">{item.dateLabel}</span>
+                          <span>
+                            +{pos}% / ~{neu}% / -{neg}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden flex">
+                          <div
+                            className="bg-emerald-500 h-full"
+                            style={{ width: `${pos}%` }}
+                            title={`Positivo ${pos}%`}
+                          />
+                          <div
+                            className="bg-gray-400 h-full"
+                            style={{ width: `${neu}%` }}
+                            title={`Neutro ${neu}%`}
+                          />
+                          <div
+                            className="bg-red-400 h-full"
+                            style={{ width: `${neg}%` }}
+                            title={`Negativo ${neg}%`}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
 
-        {dedupInsights.length > 0 && (
-          <div className="mb-4 border rounded-lg p-4 bg-white text-sm">
-            <h3 className="font-semibold mb-2 text-gray-800">Insights recorrentes</h3>
-            <ul className="space-y-1">
-              {dedupInsights.map((item) => (
-                <li key={item.text} className="flex justify-between gap-2">
-                  <span className="text-gray-700">{item.text}</span>
-                  <span className="text-[11px] text-gray-500">{item.count}x</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+            {/* Lista de transcrições enxuta */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-800">Transcrições</h3>
+                {selectedTranscription && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTranscription(null)}
+                    className="text-xs text-blue-700 hover:underline"
+                  >
+                    Fechar detalhes
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {orderedTranscricoes.map((t) => (
+                  <button
+                    key={t.fileName}
+                    type="button"
+                    onClick={() => setSelectedTranscription(t)}
+                    className={`border rounded-lg p-3 text-left bg-white shadow-sm hover:border-blue-400 transition ${
+                      selectedTranscription?.fileName === t.fileName ? 'ring-2 ring-blue-200' : ''
+                    }`}
+                  >
+                    <p className="font-medium text-gray-900 line-clamp-1">{t.fileName}</p>
+                    <p className="text-xs text-gray-500">
+                      {t.createdAt
+                        ? new Date(t.createdAt).toLocaleString('pt-BR')
+                        : '---'}
+                    </p>
+                    {t.analysis?.sentiments && (
+                      <p className="text-[11px] text-gray-600 mt-1">
+                        Sentimento: +
+                        {(t.analysis.sentiments.positive * 100).toFixed(0)}% /
+                        {(t.analysis.sentiments.neutral * 100).toFixed(0)}% /
+                        {(t.analysis.sentiments.negative * 100).toFixed(0)}%
+                      </p>
+                    )}
+                    {!t.analysis && (
+                      <p className="text-[11px] text-amber-600 mt-1">
+                        Análise pendente.
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
 
-            {/* Lista de transcrições */}
-            <ul className="space-y-2 text-sm">
-              {orderedTranscricoes.map((t) => (
-                <li key={t.fileName} className="border rounded-lg p-3 bg-white shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              {selectedTranscription && (
+                <div className="mt-3 border rounded-lg p-4 bg-gray-50 text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
                     <div>
-                      <p className="font-medium text-gray-900">{t.fileName}</p>
+                      <p className="font-semibold text-gray-900">
+                        {selectedTranscription.fileName}
+                      </p>
                       <p className="text-xs text-gray-500">
-                        Registrada em{' '}
-                        {t.createdAt
-                          ? new Date(t.createdAt).toLocaleString('pt-BR')
+                        {selectedTranscription.createdAt
+                          ? new Date(selectedTranscription.createdAt).toLocaleString('pt-BR')
                           : '---'}
                       </p>
                     </div>
-                    {t.analysis?.sentiments && (
-                      <div className="text-[11px] text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                        Sentimento:{' '}
-                        <span className="text-green-600">
-                          {(t.analysis.sentiments.positive * 100).toFixed(0)}%+
-                        </span>{' '}
-                        /{' '}
-                        <span className="text-yellow-600">
-                          {(t.analysis.sentiments.neutral * 100).toFixed(0)}%º
-                        </span>{' '}
-                        /{' '}
-                        <span className="text-red-500">
-                          {(t.analysis.sentiments.negative * 100).toFixed(0)}%-
-                        </span>
+                    {selectedTranscription.analysis?.sentiments && (
+                      <div className="text-[11px] text-gray-600 bg-white px-2 py-1 rounded-md border">
+                        Sentimento: +
+                        {(selectedTranscription.analysis.sentiments.positive * 100).toFixed(0)}% /
+                        {(selectedTranscription.analysis.sentiments.neutral * 100).toFixed(0)}% /
+                        {(selectedTranscription.analysis.sentiments.negative * 100).toFixed(0)}%
                       </div>
                     )}
                   </div>
-                  {t.analysis?.summary && (
-                    <p className="mt-2 text-gray-700 text-sm leading-relaxed">
-                      {t.analysis.summary}
+
+                  {selectedTranscription.analysis?.summary && (
+                    <p className="text-gray-700 mb-2">
+                      {selectedTranscription.analysis.summary}
                     </p>
                   )}
-                  {!t.analysis && (
-                    <p className="mt-2 text-xs text-amber-600">
-                      Análise pendente ou indisponível para esta transcrição.
-                    </p>
-                  )}
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                    {Array.isArray(t.analysis?.keywords) &&
-                      t.analysis.keywords.map((kw) => (
+
+                  {Array.isArray(selectedTranscription.analysis?.keywords) && (
+                    <div className="flex flex-wrap gap-2 text-[11px] text-gray-700 mb-2">
+                      {selectedTranscription.analysis.keywords.map((kw) => (
                         <span
-                          key={`${t.fileName}-kw-${kw}`}
+                          key={`${selectedTranscription.fileName}-kw-${kw}`}
                           className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full"
                         >
                           {kw}
                         </span>
                       ))}
-                    {Array.isArray(t.analysis?.topics) &&
-                      t.analysis.topics.map((topic) => (
+                    </div>
+                  )}
+
+                  {Array.isArray(selectedTranscription.analysis?.topics) && (
+                    <div className="flex flex-wrap gap-2 text-[11px] text-gray-700 mb-2">
+                      {selectedTranscription.analysis.topics.map((topic) => (
                         <span
-                          key={`${t.fileName}-topic-${topic}`}
+                          key={`${selectedTranscription.fileName}-topic-${topic}`}
                           className="px-2 py-1 bg-amber-50 text-amber-700 rounded-full"
                         >
                           {topic}
                         </span>
                       ))}
-                  </div>
-                  {Array.isArray(t.analysis?.actionableInsights) &&
-                    t.analysis.actionableInsights.length > 0 && (
-                      <div className="mt-3 bg-gray-50 border rounded-lg p-2">
+                    </div>
+                  )}
+
+                  {Array.isArray(selectedTranscription.analysis?.actionableInsights) &&
+                    selectedTranscription.analysis.actionableInsights.length > 0 && (
+                      <div className="mt-2 bg-white border rounded-lg p-2">
                         <p className="text-xs font-semibold text-gray-700 mb-1">
                           Sugestões desta sessão
                         </p>
                         <ul className="list-disc list-inside text-xs text-gray-700 space-y-1">
-                          {t.analysis.actionableInsights.map((insight, idx) => (
-                            <li key={`${t.fileName}-insight-${idx}`}>{insight}</li>
+                          {selectedTranscription.analysis.actionableInsights.map((insight, idx) => (
+                            <li key={`${selectedTranscription.fileName}-insight-${idx}`}>
+                              {insight}
+                            </li>
                           ))}
                         </ul>
                       </div>
                     )}
-                </li>
-              ))}
-            </ul>
+                </div>
+              )}
+            </div>
           </>
+        )}
+      </div>
+
+      {/* Histórico de sessões (meetings) */}
+      <div className="bg-white rounded-xl shadow p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+          <h2 className="text-lg font-semibold">Sessões</h2>
+          <p className="text-xs text-gray-500">
+            Galeria resumida (mais recentes primeiro).
+          </p>
+        </div>
+
+        {loadingMeetings ? (
+          <p className="text-sm text-gray-500">Carregando sessões...</p>
+        ) : meetingsDiscente.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            Nenhuma sessão registrada para este discente.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
+            {meetingsDiscente.map((m) => {
+              const summaryText =
+                m.clinicalRecord?.summary || m.notes || m.informalNotes || null;
+              const observationsText = m.clinicalRecord?.observations || null;
+              const planText = m.clinicalRecord?.plan || null;
+
+              return (
+                <div
+                  key={m.id}
+                  className="border rounded-lg p-3 bg-gray-50 flex flex-col gap-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {formatMeetingLabel(m)}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        Criada em:{' '}
+                        {m.createdAt
+                          ? new Date(m.createdAt).toLocaleString('pt-BR')
+                          : '---'}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      {renderMeetingStatusBadge(m)}
+                      {m._dateObj && (
+                        <span className="text-[11px] text-gray-500">
+                          {m._isPast ? 'Data passada' : 'Sessão futura'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {summaryText && (
+                    <p className="text-xs text-gray-700">
+                      <span className="font-semibold text-gray-800">Resumo: </span>
+                      {summaryText}
+                    </p>
+                  )}
+                  {observationsText && (
+                    <p className="text-[11px] text-gray-700">
+                      <span className="font-semibold text-gray-800">Condutas: </span>
+                      {observationsText}
+                    </p>
+                  )}
+                  {planText && (
+                    <p className="text-[11px] text-gray-700">
+                      <span className="font-semibold text-gray-800">Próximos passos: </span>
+                      {planText}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mt-auto">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/meetings/${m.id}`)}
+                      className="inline-flex items-center px-2 py-1 rounded-md border text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Ver sessão
+                    </button>
+                    {m._statusNormalized !== 'concluida' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLoadingMeetings(true);
+                          try {
+                            await apiService.updateMeeting(m.id, { status: 'concluida' });
+                            const resp = await apiService.getMeetings();
+                            if (resp?.success && resp.data?.meetings) {
+                              meetingsCacheRef.current = resp.data.meetings;
+                              setAllMeetings(resp.data.meetings);
+                              try {
+                                const check = await apiService.canScheduleForDiscente(discente.id);
+                                if (check?.success && check.data) {
+                                  setScheduleInfo(check.data);
+                                }
+                              } catch (e) {
+                                console.warn('Falha ao atualizar limite de sessões:', e);
+                              }
+                            }
+                          } catch (err) {
+                            console.error(err);
+                            alert('Não foi possível concluir a sessão.');
+                          } finally {
+                            setLoadingMeetings(false);
+                          }
+                        }}
+                        className="inline-flex items-center px-2 py-1 rounded-md bg-green-600 text-white text-[11px] font-semibold hover:bg-green-700"
+                      >
+                        Marcar como concluída
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Histórico de sessões (meetings) */}
+      <div className="bg-white rounded-xl shadow p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+          <h2 className="text-lg font-semibold">Sessões</h2>
+          <p className="text-xs text-gray-500">
+            Galeria resumida (mais recentes primeiro).
+          </p>
+        </div>
+
+        {loadingMeetings ? (
+          <p className="text-sm text-gray-500">Carregando sessões...</p>
+        ) : meetingsDiscente.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            Nenhuma sessão registrada para este discente.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
+            {meetingsDiscente.map((m) => {
+              const summaryText =
+                m.clinicalRecord?.summary || m.notes || m.informalNotes || null;
+              const observationsText = m.clinicalRecord?.observations || null;
+              const planText = m.clinicalRecord?.plan || null;
+
+              return (
+                <div
+                  key={m.id}
+                  className="border rounded-lg p-3 bg-gray-50 flex flex-col gap-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {formatMeetingLabel(m)}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        Criada em:{' '}
+                        {m.createdAt
+                          ? new Date(m.createdAt).toLocaleString('pt-BR')
+                          : '---'}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      {renderMeetingStatusBadge(m)}
+                      {m._dateObj && (
+                        <span className="text-[11px] text-gray-500">
+                          {m._isPast ? 'Data passada' : 'Sessão futura'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {summaryText && (
+                    <p className="text-xs text-gray-700">
+                      <span className="font-semibold text-gray-800">Resumo: </span>
+                      {summaryText}
+                    </p>
+                  )}
+                  {observationsText && (
+                    <p className="text-[11px] text-gray-700">
+                      <span className="font-semibold text-gray-800">Condutas: </span>
+                      {observationsText}
+                    </p>
+                  )}
+                  {planText && (
+                    <p className="text-[11px] text-gray-700">
+                      <span className="font-semibold text-gray-800">Próximos passos: </span>
+                      {planText}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mt-auto">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/meetings/${m.id}`)}
+                      className="inline-flex items-center px-2 py-1 rounded-md border text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Ver sessão
+                    </button>
+                    {m._statusNormalized !== 'concluida' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLoadingMeetings(true);
+                          try {
+                            await apiService.updateMeeting(m.id, { status: 'concluida' });
+                            const resp = await apiService.getMeetings();
+                            if (resp?.success && resp.data?.meetings) {
+                              meetingsCacheRef.current = resp.data.meetings;
+                              setAllMeetings(resp.data.meetings);
+                              try {
+                                const check = await apiService.canScheduleForDiscente(discente.id);
+                                if (check?.success && check.data) {
+                                  setScheduleInfo(check.data);
+                                }
+                              } catch (e) {
+                                console.warn('Falha ao atualizar limite de sessões:', e);
+                              }
+                            }
+                          } catch (err) {
+                            console.error(err);
+                            alert('Não foi possível concluir a sessão.');
+                          } finally {
+                            setLoadingMeetings(false);
+                          }
+                        }}
+                        className="inline-flex items-center px-2 py-1 rounded-md bg-green-600 text-white text-[11px] font-semibold hover:bg-green-700"
+                      >
+                        Marcar como concluída
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Linha do tempo do discente */}
+      <div className="bg-white rounded-xl shadow p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h2 className="text-lg font-semibold">Linha do tempo do discente</h2>
+          <div className="flex items-center gap-2 text-xs">
+            <label className="text-gray-500">Filtrar:</label>
+            <select
+              value={timelineFilter}
+              onChange={(e) => setTimelineFilter(e.target.value)}
+              className="border rounded-md px-2 py-1 text-xs"
+            >
+              <option value="all">Todos</option>
+              <option value="solicitacao">Solicitações</option>
+              <option value="sessao">Sessões</option>
+              <option value="transcricao">Transcrições</option>
+            </select>
+          </div>
+        </div>
+
+        {filteredTimelineItems.length === 0 ? (
+          <p className="text-sm text-gray-500 mt-2">Nenhum evento registrado.</p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {filteredTimelineItems.map((item, idx) => (
+              <div
+                key={`${item.type}-${idx}-${item.title}`}
+                className="border rounded-lg p-3 bg-gray-50"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
+                        timelineTypeStyles[item.type] ||
+                        'bg-gray-100 text-gray-700 border border-gray-200'
+                      }`}
+                    >
+                      {timelineTypeLabels[item.type] || item.type}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {item.date.toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-500">
+                    {item.status || 'Sem status'}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm font-semibold text-gray-900">
+                  {item.title}
+                </p>
+                <p className="text-xs text-gray-700">{item.description}</p>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

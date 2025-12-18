@@ -209,6 +209,7 @@ async function computeOverviewData() {
 
   for (const t of all) {
     const course = t.metadata?.curso || 'Não informado';
+    const analysis = t.analysis || {};
 
     if (!byCourseMap[course]) {
       byCourseMap[course] = {
@@ -216,6 +217,12 @@ async function computeOverviewData() {
         count: 0,
         distinctStudents: new Set(),
         lastTranscriptionAt: null,
+        sentimentCount: 0,
+        sumPos: 0,
+        sumNeu: 0,
+        sumNeg: 0,
+        keywords: [],
+        topics: [],
       };
     }
 
@@ -236,6 +243,33 @@ async function computeOverviewData() {
         entry.lastTranscriptionAt = createdAt.toISOString();
       }
     }
+
+    if (analysis.sentiments) {
+      entry.sentimentCount += 1;
+      entry.sumPos += analysis.sentiments.positive || 0;
+      entry.sumNeu += analysis.sentiments.neutral || 0;
+      entry.sumNeg += analysis.sentiments.negative || 0;
+    }
+
+    if (Array.isArray(analysis.keywords)) {
+      analysis.keywords.forEach((kw) => {
+        const normalized =
+          typeof kw === 'string'
+            ? normalizeString(kw)
+            : normalizeString(kw?.term || kw?.keyword || kw?.label);
+        if (normalized) entry.keywords.push(normalized);
+      });
+    }
+
+    if (Array.isArray(analysis.topics)) {
+      analysis.topics.forEach((topic) => {
+        const normalized =
+          typeof topic === 'string'
+            ? normalizeString(topic)
+            : normalizeString(topic?.term || topic?.topic || topic?.label);
+        if (normalized) entry.topics.push(normalized);
+      });
+    }
   }
 
   const byCourse = Object.values(byCourseMap)
@@ -244,6 +278,16 @@ async function computeOverviewData() {
       count: c.count,
       distinctStudents: c.distinctStudents.size,
       lastTranscriptionAt: c.lastTranscriptionAt,
+      sentimentsAvg:
+        c.sentimentCount > 0
+          ? {
+              positive: c.sumPos / c.sentimentCount,
+              neutral: c.sumNeu / c.sentimentCount,
+              negative: c.sumNeg / c.sentimentCount,
+            }
+          : null,
+      topKeywords: buildFrequencyMap(c.keywords).slice(0, 4),
+      topTopics: buildFrequencyMap(c.topics).slice(0, 4),
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -515,6 +559,17 @@ async function computeOverviewData() {
           lines.push(
             `- ${course.course}: ${course.count} transcrições | ${course.distinctStudents} discentes | Último registro: ${course.lastTranscriptionAt ? new Date(course.lastTranscriptionAt).toLocaleDateString('pt-BR') : '---'}`
           );
+          if (course.sentimentsAvg) {
+            lines.push(
+              `    Sentimento médio: +${(course.sentimentsAvg.positive * 100).toFixed(1)}% / ~${(course.sentimentsAvg.neutral * 100).toFixed(1)}% / -${(course.sentimentsAvg.negative * 100).toFixed(1)}%`
+            );
+          }
+          if ((course.topTopics && course.topTopics.length) || (course.topKeywords && course.topKeywords.length)) {
+            const topics = (course.topTopics || []).slice(0, 3).map((t) => t.term).join(', ');
+            const keywords = (course.topKeywords || []).slice(0, 3).map((k) => k.term).join(', ');
+            if (topics) lines.push(`    Tópicos principais: ${topics}`);
+            if (keywords) lines.push(`    Palavras-chave: ${keywords}`);
+          }
         });
       }
 
@@ -884,6 +939,245 @@ async function computeOverviewData() {
       res.status(500).json({
         success: false,
         message: 'Erro em relatório por discente',
+        error: error.message,
+      });
+    }
+  });
+
+  // ===== /api/reports/by-discente/:discenteId/export =====
+  router.get('/by-discente/:discenteId/export', async (req, res) => {
+    try {
+      const { discenteId } = req.params;
+      const all = await transcriptionService.listTranscriptionsWithMetadata();
+      const filtered = all.filter((t) => t.metadata?.discenteId === discenteId);
+
+      const totalTranscriptions = filtered.length;
+      const totalSizeBytes = filtered.reduce((sum, t) => sum + (t.size || 0), 0);
+      const historyPatterns = buildDiscentePatterns(filtered);
+
+      let sentimentsAvg = null;
+      if (totalTranscriptions > 0) {
+        const sums = filtered.reduce(
+          (acc, t) => {
+            const s = t.analysis?.sentiments || {};
+            return {
+              positive: acc.positive + (s.positive || 0),
+              neutral: acc.neutral + (s.neutral || 0),
+              negative: acc.negative + (s.negative || 0),
+            };
+          },
+          { positive: 0, neutral: 0, negative: 0 }
+        );
+        sentimentsAvg = {
+          positive: sums.positive / totalTranscriptions,
+          neutral: sums.neutral / totalTranscriptions,
+          negative: sums.negative / totalTranscriptions,
+        };
+      }
+
+      const formatDate = (value) => {
+        if (!value) return '---';
+        const d = new Date(value);
+        return Number.isNaN(d.getTime())
+          ? '---'
+          : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+      };
+
+      const lines = [];
+      lines.push(`Relatório do discente ${discenteId}`);
+      lines.push(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
+      lines.push('----------------------------------------');
+      lines.push(`Total de transcrições: ${totalTranscriptions}`);
+      lines.push(`Tamanho total (KB): ${Math.round(totalSizeBytes / 1024)}`);
+
+      if (sentimentsAvg) {
+        lines.push(
+          `Sentimento médio: +${(sentimentsAvg.positive * 100).toFixed(1)}% / ~${(sentimentsAvg.neutral * 100).toFixed(1)}% / -${(sentimentsAvg.negative * 100).toFixed(1)}%`
+        );
+      }
+
+      lines.push('');
+      lines.push('Padrões percebidos:');
+      if (
+        !historyPatterns ||
+        (!historyPatterns.recurringThemes?.length &&
+          !historyPatterns.repeatedIdeas?.length &&
+          !historyPatterns.emotionalPatterns?.length &&
+          !historyPatterns.commonTriggers?.length)
+      ) {
+        lines.push('- Nenhum padrão identificado até o momento.');
+      } else {
+        if (historyPatterns.recurringThemes?.length) {
+          lines.push(`- Temas recorrentes: ${historyPatterns.recurringThemes.join(', ')}`);
+        }
+        if (historyPatterns.repeatedIdeas?.length) {
+          lines.push(`- Ideias repetidas: ${historyPatterns.repeatedIdeas.join(', ')}`);
+        }
+        if (historyPatterns.emotionalPatterns?.length) {
+          lines.push(`- Padrões emocionais: ${historyPatterns.emotionalPatterns.join(', ')}`);
+        }
+        if (historyPatterns.commonTriggers?.length) {
+          lines.push(`- Gatilhos comuns: ${historyPatterns.commonTriggers.join(', ')}`);
+        }
+      }
+
+      lines.push('');
+      lines.push('Transcrições:');
+      if (!filtered.length) {
+        lines.push('- Nenhuma transcrição registrada.');
+      } else {
+        filtered
+          .sort((a, b) => {
+            const da = a.createdAt ? new Date(a.createdAt) : null;
+            const db = b.createdAt ? new Date(b.createdAt) : null;
+            if (!da || !db) return 0;
+            return db - da;
+          })
+          .forEach((t) => {
+            lines.push(
+              `- ${t.fileName || 'Sem nome'} | ${formatDate(t.createdAt)} | ${(t.size || 0) / 1024 >= 1 ? `${Math.round((t.size || 0) / 1024)} KB` : `${t.size || 0} B`}`
+            );
+            if (t.analysis?.summary) {
+              lines.push(`  resumo: ${t.analysis.summary}`);
+            }
+            if (Array.isArray(t.analysis?.actionableInsights) && t.analysis.actionableInsights.length > 0) {
+              lines.push(`  sugestões: ${t.analysis.actionableInsights.join(' | ')}`);
+            }
+          });
+      }
+
+      const content = lines.join('\n');
+      const fileName = `relatorio-discente-${discenteId}.txt`;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.send(content);
+    } catch (error) {
+      console.error('Erro ao exportar relatório do discente:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao exportar relatório do discente',
+        error: error.message,
+      });
+    }
+  });
+
+  // ===== /api/reports/by-discente/:discenteId/export-pdf =====
+  router.get('/by-discente/:discenteId/export-pdf', async (req, res) => {
+    try {
+      const { discenteId } = req.params;
+      const all = await transcriptionService.listTranscriptionsWithMetadata();
+      const filtered = all.filter((t) => t.metadata?.discenteId === discenteId);
+
+      const totalTranscriptions = filtered.length;
+      const totalSizeBytes = filtered.reduce((sum, t) => sum + (t.size || 0), 0);
+      const historyPatterns = buildDiscentePatterns(filtered);
+
+      let sentimentsAvg = null;
+      if (totalTranscriptions > 0) {
+        const sums = filtered.reduce(
+          (acc, t) => {
+            const s = t.analysis?.sentiments || {};
+            return {
+              positive: acc.positive + (s.positive || 0),
+              neutral: acc.neutral + (s.neutral || 0),
+              negative: acc.negative + (s.negative || 0),
+            };
+          },
+          { positive: 0, neutral: 0, negative: 0 }
+        );
+        sentimentsAvg = {
+          positive: sums.positive / totalTranscriptions,
+          neutral: sums.neutral / totalTranscriptions,
+          negative: sums.negative / totalTranscriptions,
+        };
+      }
+
+      const formatDate = (value) => {
+        if (!value) return '---';
+        const d = new Date(value);
+        return Number.isNaN(d.getTime())
+          ? '---'
+          : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+      };
+
+      const doc = new PDFDocument({ margin: 50 });
+      const fileName = `relatorio-discente-${discenteId}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      doc.pipe(res);
+
+      doc.fontSize(16).text(`Relatório do discente ${discenteId}`, { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('gray').text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
+      doc.fillColor('black');
+      doc.moveDown();
+
+      doc.fontSize(12).text('Resumo', { underline: true });
+      doc.moveDown(0.3);
+      doc.fontSize(11).text(`Total de transcrições: ${totalTranscriptions}`);
+      doc.text(`Tamanho total (KB): ${Math.round(totalSizeBytes / 1024)}`);
+      if (sentimentsAvg) {
+        doc.text(
+          `Sentimento médio: +${(sentimentsAvg.positive * 100).toFixed(1)}% / ~${(sentimentsAvg.neutral * 100).toFixed(1)}% / -${(sentimentsAvg.negative * 100).toFixed(1)}%`
+        );
+      }
+      doc.moveDown();
+
+      doc.fontSize(12).text('Padrões percebidos', { underline: true });
+      doc.moveDown(0.3);
+      const patterns = [];
+      if (historyPatterns?.recurringThemes?.length) {
+        patterns.push(`Temas recorrentes: ${historyPatterns.recurringThemes.join(', ')}`);
+      }
+      if (historyPatterns?.repeatedIdeas?.length) {
+        patterns.push(`Ideias repetidas: ${historyPatterns.repeatedIdeas.join(', ')}`);
+      }
+      if (historyPatterns?.emotionalPatterns?.length) {
+        patterns.push(`Padrões emocionais: ${historyPatterns.emotionalPatterns.join(', ')}`);
+      }
+      if (historyPatterns?.commonTriggers?.length) {
+        patterns.push(`Gatilhos comuns: ${historyPatterns.commonTriggers.join(', ')}`);
+      }
+      if (patterns.length === 0) {
+        doc.fontSize(10).fillColor('gray').text('Nenhum padrão identificado até o momento.');
+        doc.fillColor('black');
+      } else {
+        patterns.forEach((p) => doc.fontSize(10).text(`• ${p}`));
+      }
+      doc.moveDown();
+
+      doc.fontSize(12).text('Transcrições', { underline: true });
+      doc.moveDown(0.3);
+      if (!filtered.length) {
+        doc.fontSize(10).fillColor('gray').text('Nenhuma transcrição registrada.');
+        doc.fillColor('black');
+      } else {
+        filtered
+          .sort((a, b) => {
+            const da = a.createdAt ? new Date(a.createdAt) : null;
+            const db = b.createdAt ? new Date(b.createdAt) : null;
+            if (!da || !db) return 0;
+            return db - da;
+          })
+          .forEach((t) => {
+            doc.fontSize(10).text(`${t.fileName || 'Sem nome'} | ${formatDate(t.createdAt)}`);
+            if (t.analysis?.summary) {
+              doc.fontSize(9).fillColor('gray').text(`Resumo: ${t.analysis.summary}`);
+              doc.fillColor('black');
+            }
+            if (Array.isArray(t.analysis?.actionableInsights) && t.analysis.actionableInsights.length > 0) {
+              doc.fontSize(9).text(`Sugestões: ${t.analysis.actionableInsights.join(' | ')}`);
+            }
+            doc.moveDown(0.4);
+          });
+      }
+
+      doc.end();
+    } catch (error) {
+      console.error('Erro ao exportar relatório do discente em PDF:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao exportar relatório do discente em PDF',
         error: error.message,
       });
     }

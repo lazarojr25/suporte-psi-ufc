@@ -203,82 +203,6 @@ export default function Relatorios() {
             </div>
           )}
 
-          {/* Solicitações por mês */}
-          <div className="bg-white rounded-xl shadow p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-              <h2 className="text-lg font-semibold">Solicitações por mês</h2>
-              {solicitacoes.peak && (
-                <span className="text-sm text-gray-600">
-                  Pico: {solicitacoes.peak.periodLabel} ({solicitacoes.peak.count})
-                </span>
-              )}
-            </div>
-            {!solicitacoes.timeline.length ? (
-              <p className="text-sm text-gray-500">Sem solicitações registradas.</p>
-            ) : (
-              <div className="min-w-full">
-                <div className="flex items-end gap-3 h-40">
-                  {solicitacoes.timeline.map((point) => {
-                    const heightPct = Math.max(
-                      6,
-                      Math.round((point.count / maxSolicTimeline) * 100)
-                    );
-                    return (
-                      <div key={point.period} className="flex flex-col items-center flex-1 min-w-[60px]">
-                        <div
-                          className="w-full max-w-[32px] bg-purple-100 rounded-t-md flex items-end justify-center"
-                          style={{ height: `${heightPct}%` }}
-                        >
-                          <span className="text-[11px] font-semibold text-purple-800 pb-1">
-                            {point.count}
-                          </span>
-                        </div>
-                        <span className="mt-2 text-[11px] text-gray-600 text-center leading-tight">
-                          {point.periodLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Atendimentos concluídos por mês */}
-          <div className="bg-white rounded-xl shadow p-4">
-            <h2 className="text-lg font-semibold mb-3">Atendimentos concluídos por mês</h2>
-            {!atendimentosTimeline.length ? (
-              <p className="text-sm text-gray-500">Sem atendimentos concluídos registrados.</p>
-            ) : (
-              <div className="min-w-full">
-                <div className="flex items-end gap-3 h-40">
-                  {atendimentosTimeline.map((point) => {
-                    const count = point.count ?? point.atendimentosConcluidos ?? 0;
-                    const heightPct = Math.max(
-                      6,
-                      Math.round((count / maxAtendimentosTimeline) * 100)
-                    );
-                    return (
-                      <div key={point.period} className="flex flex-col items-center flex-1 min-w-[60px]">
-                        <div
-                          className="w-full max-w-[32px] bg-sky-100 rounded-t-md flex items-end justify-center"
-                          style={{ height: `${heightPct}%` }}
-                        >
-                          <span className="text-[11px] font-semibold text-sky-800 pb-1">
-                            {count}
-                          </span>
-                        </div>
-                        <span className="mt-2 text-[11px] text-gray-600 text-center leading-tight">
-                          {point.periodLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Comparativo solicitações x atendimentos concluídos */}
           <div className="bg-white rounded-xl shadow p-4 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-3">Solicitações x Atendimentos concluídos</h2>
@@ -349,27 +273,30 @@ export default function Relatorios() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-4 py-2 text-left font-medium text-gray-700">
-                    Curso
-                  </th>
-                  <th className="px-4 py-2 text-left font-medium text-gray-700">
-                    Qtde. transcrições
-                  </th>
-                  <th className="px-4 py-2 text-left font-medium text-gray-700">
-                    Discentes atendidos
-                  </th>
-                  <th className="px-4 py-2 text-left font-medium text-gray-700">
-                    Última transcrição
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {byCourse.map((c) => (
-                  <tr key={c.course} className="border-b last:border-b-0">
-                    <td className="px-4 py-2">{c.course}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-800 font-medium">{c.count}</span>
+              <th className="px-4 py-2 text-left font-medium text-gray-700">
+                Curso
+              </th>
+              <th className="px-4 py-2 text-left font-medium text-gray-700">
+                Qtde. transcrições
+              </th>
+              <th className="px-4 py-2 text-left font-medium text-gray-700">
+                Discentes atendidos
+              </th>
+              <th className="px-4 py-2 text-left font-medium text-gray-700">
+                Sentimento médio
+              </th>
+              <th className="px-4 py-2 text-left font-medium text-gray-700">
+                Principais temas
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {byCourse.map((c) => (
+              <tr key={c.course} className="border-b last:border-b-0">
+                <td className="px-4 py-2">{c.course}</td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-800 font-medium">{c.count}</span>
                         <div className="flex-1 h-2 bg-gray-100 rounded-full">
                           <div
                             className="h-2 rounded-full bg-blue-500"
@@ -380,22 +307,49 @@ export default function Relatorios() {
                               )}%`,
                             }}
                           />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">{c.distinctStudents}</td>
-                    <td className="px-4 py-2 text-gray-600">
-                      {c.lastTranscriptionAt
-                        ? new Date(c.lastTranscriptionAt).toLocaleString(
-                            'pt-BR'
-                          )
-                        : '---'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-2">{c.distinctStudents}</td>
+                <td className="px-4 py-2 text-gray-600">
+                  {c.sentimentsAvg ? (
+                    <span className="text-xs text-gray-700">
+                      +{(c.sentimentsAvg.positive * 100).toFixed(0)}% / ~
+                      {(c.sentimentsAvg.neutral * 100).toFixed(0)}% / -
+                      {(c.sentimentsAvg.negative * 100).toFixed(0)}%
+                    </span>
+                  ) : (
+                    '---'
+                  )}
+                </td>
+                <td className="px-4 py-2 text-gray-600">
+                  <div className="flex flex-wrap gap-1 text-[11px]">
+                    {c.topTopics?.slice(0, 3).map((t) => (
+                      <span
+                        key={`${c.course}-topic-${t.term}`}
+                        className="px-2 py-0.5 rounded-full bg-green-50 text-green-800 border border-green-200"
+                      >
+                        {t.term}
+                      </span>
+                    ))}
+                    {(!c.topTopics || c.topTopics.length === 0) &&
+                      c.topKeywords?.slice(0, 3).map((k) => (
+                        <span
+                          key={`${c.course}-kw-${k.term}`}
+                          className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200"
+                        >
+                          {k.term}
+                        </span>
+                      ))}
+                    {(!c.topTopics || c.topTopics.length === 0) &&
+                      (!c.topKeywords || c.topKeywords.length === 0) && <span className="text-xs text-gray-500">---</span>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
           {/* Principais temas gerais */}
           <div className="bg-white rounded-xl shadow p-4">

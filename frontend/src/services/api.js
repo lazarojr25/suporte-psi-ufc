@@ -229,6 +229,40 @@ class ApiService {
     return { blob, fileName };
   }
 
+  async exportReportByDiscente(discenteId) {
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/by-discente/${discenteId}/export`, {
+      headers,
+    });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    let fileName = null;
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+    const blob = await res.blob();
+    return { blob, fileName };
+  }
+
+  async exportReportByDiscentePdf(discenteId) {
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/by-discente/${discenteId}/export-pdf`, {
+      headers,
+    });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    let fileName = null;
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+    const blob = await res.blob();
+    return { blob, fileName };
+  }
+
   // ------------------ Saúde ------------------
   async healthCheck() {
     return this.request('/health');
