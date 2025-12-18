@@ -14,7 +14,6 @@ import GerenciarSolicitacoes from '../pages/GerenciarSolicitacoes';
 import DiscenteDetalhe from '../pages/DiscenteDetalhe';
 import ListaDiscentes from '../pages/ListaDiscentes';
 import CadastroFuncionario from '../pages/CadastroFuncionario';
-import UploadTranscricao from '../pages/UploadTranscricao';
 import Configuracoes from '../pages/Configuracoes';
 import Agenda from '../pages/Agenda';
 import MeetingDetalhe from '../pages/MeetingDetalhe';
@@ -45,7 +44,6 @@ export default function AppRoutes() {
           <Route path="/meetings/:meetingId" element={<MeetingDetalhe />} />
           <Route path="/gerenciar-solicitacoes" element={<GerenciarSolicitacoes />} />
           <Route path="/cadastro" element={<CadastroFuncionario />} />
-          <Route path="/upload-transcricao" element={<UploadTranscricao />} />
           <Route path="/configuracoes" element={<Configuracoes />} /> 
           <Route path="/agenda" element={<Agenda />} />
           <Route path="/usuarios" element={<Usuarios />} />

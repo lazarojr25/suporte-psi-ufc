@@ -12,6 +12,7 @@ import meetingRoutes from './routes/meetings.js';
 import attendanceConfigRoutes from './routes/attendanceConfig.js';
 import solicitacaoRoutes from './routes/solicitacoes.js';
 import usersRoutes from './routes/users.js';
+import { verifyAuth } from './middleware/auth.js';
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
@@ -54,14 +55,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // Rotas da API
-app.use('/api/transcription', transcriptionRoutes);
-app.use('/api/meetings', meetingRoutes);
-app.use('/api/attendance-config', attendanceConfigRoutes);
-app.use('/api/solicitacoes', solicitacaoRoutes);
-app.use('/api/users', usersRoutes);
-
-
-app.use('/api/reports', reportsRouter);
+app.use('/api/transcription', verifyAuth(false), transcriptionRoutes);
+app.use('/api/meetings', verifyAuth(false), meetingRoutes);
+app.use('/api/attendance-config', verifyAuth(true), attendanceConfigRoutes);
+app.use('/api/solicitacoes', verifyAuth(false), solicitacaoRoutes);
+app.use('/api/users', verifyAuth(true), usersRoutes);
+app.use('/api/reports', verifyAuth(true), reportsRouter);
 
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {

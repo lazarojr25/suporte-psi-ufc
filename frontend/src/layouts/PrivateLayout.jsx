@@ -70,7 +70,7 @@ export default function PrivateLayout() {
     return <Navigate to="/" replace />;
   }
 
-  const adminOnlyRoutes = ['/relatorios', '/upload-transcricao', '/usuarios'];
+  const adminOnlyRoutes = ['/relatorios', '/usuarios'];
   const isAdmin = role === 'admin';
   if (role && !isAdmin && adminOnlyRoutes.includes(location.pathname)) {
     return <Navigate to="/agenda" replace />;

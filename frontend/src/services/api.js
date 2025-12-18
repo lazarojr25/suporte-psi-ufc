@@ -1,9 +1,21 @@
+import { auth } from './firebase';
 // Serviço para comunicação com o backend Node.js
 const API_BASE_URL = 'http://localhost:5001/api';
 
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
+  }
+
+  async getAuthToken() {
+    const user = auth.currentUser;
+    if (!user) return null;
+    try {
+      return await user.getIdToken();
+    } catch (e) {
+      console.warn('Falha ao obter ID token:', e?.message);
+      return null;
+    }
   }
 
   // Método genérico para fazer requisições
@@ -19,6 +31,12 @@ class ApiService {
     };
     if (!isFormData && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // Anexa token de auth, exceto se explicitamente ignorado
+    const token = options.skipAuth ? null : await this.getAuthToken();
+    if (!options.skipAuth && token) {
+      headers.Authorization = `Bearer ${token}`;
     }
 
     const config = {
