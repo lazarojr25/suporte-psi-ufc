@@ -317,6 +317,24 @@ export default function DiscenteDetalhe() {
 
   console.log('meetingsDiscente ',JSON.stringify(meetingsDiscente));
 
+  const clinicalReports = meetingsDiscente.filter((m) => {
+    const cr = m.clinicalRecord || {};
+    return (
+      cr.identificacaoServico ||
+      cr.identificacaoProfissional ||
+      cr.motivoDemanda ||
+      cr.procedimentos ||
+      cr.analiseCompreensao ||
+      cr.encaminhamentosRecomendacoes ||
+      cr.limitesDocumento ||
+      cr.planoObjetivos ||
+      cr.planoEstrategias ||
+      cr.planoAcordos ||
+      cr.planoEncaminhamentos ||
+      cr.planoCriterios
+    );
+  });
+
   const upcomingMeeting = meetingsDiscente
     .filter((m) => m._dateObj && m._dateObj >= now)
     .sort((a, b) => a._dateObj - b._dateObj)[0] || null;
@@ -494,7 +512,11 @@ export default function DiscenteDetalhe() {
       items.push({
         type: 'sessao',
         title: 'Sessão agendada/registrada',
-        description: m.notes || m.clinicalRecord?.summary || 'Sessão criada',
+        description:
+          m.notes ||
+          m.clinicalRecord?.analiseCompreensao ||
+          m.clinicalRecord?.motivoDemanda ||
+          'Sessão criada',
         status: m.status,
         date,
       });
@@ -613,82 +635,83 @@ export default function DiscenteDetalhe() {
         </dl>
       </div>
 
-      {/* Panorama rápido */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div
-          className={`rounded-xl border shadow-sm p-4 ${
-            isBlockedByLimit
-              ? 'bg-red-50 border-red-100'
-              : 'bg-blue-50 border-blue-100'
-          }`}
-        >
-          <p className="text-xs uppercase text-gray-600 tracking-wide">
-            Controle de sessões
-          </p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">
-            {usedSessions}
-            {configuredLimit > 0 && (
-              <span className="text-lg text-gray-600"> / {configuredLimit}</span>
-            )}
-          </p>
-          <p className="text-sm text-gray-700">
-            {configuredLimit > 0
-              ? `Restantes: ${remainingSessions}`
-              : 'Sem limite configurado'}
-          </p>
-          {isBlockedByLimit && (
-            <p className="text-xs text-red-700 mt-1">
-              Este discente atingiu o limite definido para o período.
+            {/* Panorama rápido */}
+      <div
+        className={`rounded-xl border shadow-sm p-4 ${
+          isBlockedByLimit
+            ? 'bg-red-50 border-red-100'
+            : 'bg-blue-50 border-blue-100'
+        }`}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+          <div className="rounded-lg p-3 space-y-3 h-full flex flex-col">
+            <p className="text-xs uppercase text-gray-600 tracking-wide">
+              Controle de sessões
             </p>
-          )}
-          {(periodStart || periodEnd) && (
-            <div className="mt-3 pt-2 border-t border-white/60 text-xs text-gray-700">
-              Período considerado: {periodStart || '---'} a {periodEnd || '---'}
+            <p className="text-3xl font-bold text-gray-900">
+              {usedSessions}
+              {configuredLimit > 0 && (
+                <span className="text-lg text-gray-600"> / {configuredLimit}</span>
+              )}
+            </p>
+            <p className="text-sm text-gray-700">
+              {configuredLimit > 0
+                ? `Restantes: ${remainingSessions}`
+                : 'Sem limite configurado'}
+            </p>
+            {isBlockedByLimit && (
+              <p className="text-xs text-red-700 mt-1">
+                Este discente atingiu o limite definido para o período.
+              </p>
+            )}
+            {(periodStart || periodEnd) && (
+              <div className="mt-2 pt-2 border-t border-white/60 text-xs text-gray-700">
+                Período considerado: {periodStart || '---'} a {periodEnd || '---'}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg p-3 space-y-3 h-full flex flex-col">
+            <div className="space-y-1">
+              <p className="text-xs uppercase text-gray-500 tracking-wide">
+                Próxima sessão agendada
+              </p>
+              <p className="text-base font-semibold text-gray-900">
+                {upcomingMeeting ? formatMeetingLabel(upcomingMeeting) : 'Nenhuma sessão registrada'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {upcomingMeeting ? `Status: ${upcomingMeeting.status}` : 'Atualize a agenda quando houver uma nova data.'}
+              </p>
             </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-xl shadow p-4 space-y-4">
-          <div>
-            <p className="text-xs uppercase text-gray-500 tracking-wide">
-              Próxima sessão agendada
-            </p>
-            <p className="text-base font-semibold text-gray-900">
-              {upcomingMeeting ? formatMeetingLabel(upcomingMeeting) : 'Nenhuma sessão registrada'}
-            </p>
-            <p className="text-xs text-gray-500">
-              {upcomingMeeting ? `Status: ${upcomingMeeting.status}` : 'Atualize a agenda quando houver uma nova data.'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase text-gray-500 tracking-wide">
-              Última sessão concluída
-            </p>
-            <p className="text-base font-semibold text-gray-900">
-              {lastCompletedMeeting ? formatMeetingLabel(lastCompletedMeeting) : 'Ainda não realizada'}
-            </p>
-            {lastCompletedMeeting && (
-              <p className="text-xs text-gray-500">Status: {lastCompletedMeeting.status}</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs uppercase text-gray-500 tracking-wide">
-              Última transcrição
-            </p>
-            <p className="text-base font-semibold text-gray-900">
-              {lastTranscription?.createdAt
-                ? new Date(lastTranscription.createdAt).toLocaleString('pt-BR')
-                : 'Sem registros'}
-            </p>
-            {lastTranscription && (
-              <p className="text-xs text-gray-500">{lastTranscription.fileName}</p>
-            )}
+            <div className="space-y-1">
+              <p className="text-xs uppercase text-gray-500 tracking-wide">
+                Última sessão concluída
+              </p>
+              <p className="text-base font-semibold text-gray-900">
+                {lastCompletedMeeting ? formatMeetingLabel(lastCompletedMeeting) : 'Ainda não realizada'}
+              </p>
+              {lastCompletedMeeting && (
+                <p className="text-xs text-gray-500">Status: {lastCompletedMeeting.status}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase text-gray-500 tracking-wide">
+                Última transcrição
+              </p>
+              <p className="text-base font-semibold text-gray-900">
+                {lastTranscription?.createdAt
+                  ? new Date(lastTranscription.createdAt).toLocaleString('pt-BR')
+                  : 'Sem registros'}
+              </p>
+              {lastTranscription && (
+                <p className="text-xs text-gray-500">{lastTranscription.fileName}</p>
+              )}
+            </div>
           </div>
         </div>
-
       </div>
 
-      {/* Relatório e transcrições do discente */}
+            {/* Analise e transcrições do discente */}
       <div className="bg-white rounded-xl shadow p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
           <h2 className="text-lg font-semibold">Transcrições e análise desse discente</h2>
@@ -955,44 +978,35 @@ export default function DiscenteDetalhe() {
         )}
       </div>
 
-      {/* Histórico de sessões (meetings) */}
+      {/* Relatórios psicológicos (CFP) */}
       <div className="bg-white rounded-xl shadow p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-          <h2 className="text-lg font-semibold">Sessões</h2>
-          <p className="text-xs text-gray-500">
-            Galeria resumida (mais recentes primeiro).
-          </p>
+          <div>
+            <h2 className="text-lg font-semibold">Relatórios psicológicos</h2>
+            <p className="text-xs text-gray-500">Registros por sessão, alinhados ao manual do CFP.</p>
+          </div>
         </div>
 
         {loadingMeetings ? (
-          <p className="text-sm text-gray-500">Carregando sessões...</p>
-        ) : meetingsDiscente.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            Nenhuma sessão registrada para este discente.
-          </p>
+          <p className="text-sm text-gray-500">Carregando relatórios...</p>
+        ) : clinicalReports.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum relatório registrado.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
-            {meetingsDiscente.map((m) => {
-              const summaryText =
-                m.clinicalRecord?.summary || m.notes || m.informalNotes || null;
-              const observationsText = m.clinicalRecord?.observations || null;
-              const planText = m.clinicalRecord?.plan || null;
-
+            {clinicalReports.map((m) => {
+              const cr = m.clinicalRecord || {};
               return (
                 <div
-                  key={m.id}
+                  key={`report-${m.id}`}
                   className="border rounded-lg p-3 bg-gray-50 flex flex-col gap-2"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">
-                        {formatMeetingLabel(m)}
+                        Sessão: {formatMeetingLabel(m)}
                       </p>
                       <p className="text-[11px] text-gray-500">
-                        Criada em:{' '}
-                        {m.createdAt
-                          ? new Date(m.createdAt).toLocaleString('pt-BR')
-                          : '---'}
+                        Status: {m.status || '---'}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -1005,23 +1019,75 @@ export default function DiscenteDetalhe() {
                     </div>
                   </div>
 
-                  {summaryText && (
+                  {cr.motivoDemanda && (
                     <p className="text-xs text-gray-700">
-                      <span className="font-semibold text-gray-800">Resumo: </span>
-                      {summaryText}
+                      <span className="font-semibold text-gray-800">Motivo: </span>
+                      {cr.motivoDemanda}
                     </p>
                   )}
-                  {observationsText && (
+                  {cr.procedimentos && (
                     <p className="text-[11px] text-gray-700">
-                      <span className="font-semibold text-gray-800">Condutas: </span>
-                      {observationsText}
+                      <span className="font-semibold text-gray-800">Procedimentos: </span>
+                      {cr.procedimentos}
                     </p>
                   )}
-                  {planText && (
-                    <p className="text-[11px] text-gray-700">
-                      <span className="font-semibold text-gray-800">Próximos passos: </span>
-                      {planText}
+                  {cr.analiseCompreensao && (
+                    <p className="text-xs text-gray-700">
+                      <span className="font-semibold text-gray-800">Análise: </span>
+                      {cr.analiseCompreensao}
                     </p>
+                  )}
+                  {cr.encaminhamentosRecomendacoes && (
+                    <p className="text-[11px] text-gray-700">
+                      <span className="font-semibold text-gray-800">Encaminhamentos/Recomendações: </span>
+                      {cr.encaminhamentosRecomendacoes}
+                    </p>
+                  )}
+                  {cr.limitesDocumento && (
+                    <p className="text-[11px] text-gray-700">
+                      <span className="font-semibold text-gray-800">Limites do documento: </span>
+                      {cr.limitesDocumento}
+                    </p>
+                  )}
+
+                  {(cr.planoObjetivos ||
+                    cr.planoEstrategias ||
+                    cr.planoAcordos ||
+                    cr.planoEncaminhamentos ||
+                    cr.planoCriterios) && (
+                    <div className="border-t pt-2 mt-1 space-y-1 text-[11px] text-gray-700">
+                      <p className="font-semibold text-gray-800 text-xs">Plano de ação</p>
+                      {cr.planoObjetivos && (
+                        <p>
+                          <span className="font-semibold">Objetivos: </span>
+                          {cr.planoObjetivos}
+                        </p>
+                      )}
+                      {cr.planoEstrategias && (
+                        <p>
+                          <span className="font-semibold">Estratégias: </span>
+                          {cr.planoEstrategias}
+                        </p>
+                      )}
+                      {cr.planoAcordos && (
+                        <p>
+                          <span className="font-semibold">Acordos: </span>
+                          {cr.planoAcordos}
+                        </p>
+                      )}
+                      {cr.planoEncaminhamentos && (
+                        <p>
+                          <span className="font-semibold">Encaminhamentos: </span>
+                          {cr.planoEncaminhamentos}
+                        </p>
+                      )}
+                      {cr.planoCriterios && (
+                        <p>
+                          <span className="font-semibold">Critérios: </span>
+                          {cr.planoCriterios}
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   <div className="flex flex-wrap gap-2 mt-auto">
@@ -1032,38 +1098,6 @@ export default function DiscenteDetalhe() {
                     >
                       Ver sessão
                     </button>
-                    {m._statusNormalized !== 'concluida' && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setLoadingMeetings(true);
-                          try {
-                            await apiService.updateMeeting(m.id, { status: 'concluida' });
-                            const resp = await apiService.getMeetings();
-                            if (resp?.success && resp.data?.meetings) {
-                              meetingsCacheRef.current = resp.data.meetings;
-                              setAllMeetings(resp.data.meetings);
-                              try {
-                                const check = await apiService.canScheduleForDiscente(discente.id);
-                                if (check?.success && check.data) {
-                                  setScheduleInfo(check.data);
-                                }
-                              } catch (e) {
-                                console.warn('Falha ao atualizar limite de sessões:', e);
-                              }
-                            }
-                          } catch (err) {
-                            console.error(err);
-                            alert('Não foi possível concluir a sessão.');
-                          } finally {
-                            setLoadingMeetings(false);
-                          }
-                        }}
-                        className="inline-flex items-center px-2 py-1 rounded-md bg-green-600 text-white text-[11px] font-semibold hover:bg-green-700"
-                      >
-                        Marcar como concluída
-                      </button>
-                    )}
                   </div>
                 </div>
               );
@@ -1091,9 +1125,13 @@ export default function DiscenteDetalhe() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
             {meetingsDiscente.map((m) => {
               const summaryText =
-                m.clinicalRecord?.summary || m.notes || m.informalNotes || null;
-              const observationsText = m.clinicalRecord?.observations || null;
-              const planText = m.clinicalRecord?.plan || null;
+                m.clinicalRecord?.analiseCompreensao ||
+                m.clinicalRecord?.motivoDemanda ||
+                m.notes ||
+                m.informalNotes ||
+                null;
+              const observationsText = m.clinicalRecord?.procedimentos || null;
+              const planText = m.clinicalRecord?.planoObjetivos || null;
 
               return (
                 <div

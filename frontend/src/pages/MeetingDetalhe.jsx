@@ -23,9 +23,18 @@ export default function MeetingDetalhe() {
 
   const [informalNotes, setInformalNotes] = useState('');
   const [clinicalRecord, setClinicalRecord] = useState({
-    summary: '',
-    observations: '',
-    plan: '',
+    identificacaoServico: '',
+    identificacaoProfissional: '',
+    motivoDemanda: '',
+    procedimentos: '',
+    analiseCompreensao: '',
+    encaminhamentosRecomendacoes: '',
+    limitesDocumento: '',
+    planoObjetivos: '',
+    planoEstrategias: '',
+    planoAcordos: '',
+    planoEncaminhamentos: '',
+    planoCriterios: '',
   });
 
   const [saving, setSaving] = useState(false);
@@ -56,9 +65,18 @@ export default function MeetingDetalhe() {
           m.informalNotes || m.completionNotes || m.notes || ''
         );
         setClinicalRecord({
-          summary: m.clinicalRecord?.summary || '',
-          observations: m.clinicalRecord?.observations || '',
-          plan: m.clinicalRecord?.plan || '',
+          identificacaoServico: m.clinicalRecord?.identificacaoServico || '',
+          identificacaoProfissional: m.clinicalRecord?.identificacaoProfissional || '',
+          motivoDemanda: m.clinicalRecord?.motivoDemanda || '',
+          procedimentos: m.clinicalRecord?.procedimentos || '',
+          analiseCompreensao: m.clinicalRecord?.analiseCompreensao || '',
+          encaminhamentosRecomendacoes: m.clinicalRecord?.encaminhamentosRecomendacoes || '',
+          limitesDocumento: m.clinicalRecord?.limitesDocumento || '',
+          planoObjetivos: m.clinicalRecord?.planoObjetivos || '',
+          planoEstrategias: m.clinicalRecord?.planoEstrategias || '',
+          planoAcordos: m.clinicalRecord?.planoAcordos || '',
+          planoEncaminhamentos: m.clinicalRecord?.planoEncaminhamentos || '',
+          planoCriterios: m.clinicalRecord?.planoCriterios || '',
         });
 
         if (m.solicitacaoId) {
@@ -284,43 +302,147 @@ export default function MeetingDetalhe() {
 
       <div className="bg-white rounded-xl shadow p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs uppercase text-gray-500">Registro clínico</p>
+          <p className="text-xs uppercase text-gray-500">Relatório psicológico (CFP)</p>
           {saveMsg && <span className="text-[11px] text-green-600">{saveMsg}</span>}
           {saveErr && <span className="text-[11px] text-red-600">{saveErr}</span>}
         </div>
         <label className="text-sm space-y-1 block">
-          <span className="text-[11px] text-gray-600">Síntese / queixa principal</span>
+          <span className="text-[11px] text-gray-600">Identificação do serviço/profissional (CFP)</span>
           <textarea
-            value={clinicalRecord.summary}
+            value={clinicalRecord.identificacaoServico}
             onChange={(e) =>
-              setClinicalRecord((prev) => ({ ...prev, summary: e.target.value }))
+              setClinicalRecord((prev) => ({ ...prev, identificacaoServico: e.target.value }))
             }
             rows={2}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+            placeholder="Ex.: Serviço-escola de Psicologia da UFC Quixadá; CRP e nome do profissional."
           />
         </label>
         <label className="text-sm space-y-1 block">
-          <span className="text-[11px] text-gray-600">Intervenções / condutas</span>
+          <span className="text-[11px] text-gray-600">Motivo da avaliação/atendimento (demanda)</span>
           <textarea
-            value={clinicalRecord.observations}
+            value={clinicalRecord.motivoDemanda}
             onChange={(e) =>
-              setClinicalRecord((prev) => ({ ...prev, observations: e.target.value }))
+              setClinicalRecord((prev) => ({ ...prev, motivoDemanda: e.target.value }))
             }
             rows={2}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+            placeholder="Demanda apresentada pelo discente ou encaminhamento recebido."
           />
         </label>
         <label className="text-sm space-y-1 block">
-          <span className="text-[11px] text-gray-600">Próximos passos / encaminhamentos</span>
+          <span className="text-[11px] text-gray-600">Procedimentos e recursos utilizados</span>
           <textarea
-            value={clinicalRecord.plan}
+            value={clinicalRecord.procedimentos}
             onChange={(e) =>
-              setClinicalRecord((prev) => ({ ...prev, plan: e.target.value }))
+              setClinicalRecord((prev) => ({ ...prev, procedimentos: e.target.value }))
             }
             rows={2}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+            placeholder="Ex.: entrevistas, escuta clínica, observações, registros de sessões. Não citar testes formais se não usados."
           />
         </label>
+        <label className="text-sm space-y-1 block">
+          <span className="text-[11px] text-gray-600">Análise e compreensão do caso</span>
+          <textarea
+            value={clinicalRecord.analiseCompreensao}
+            onChange={(e) =>
+              setClinicalRecord((prev) => ({ ...prev, analiseCompreensao: e.target.value }))
+            }
+            rows={2}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+            placeholder="Síntese clínica em linguagem acessível; evitar jargão jurídico/diagnóstico fechado."
+          />
+        </label>
+        <label className="text-sm space-y-1 block">
+          <span className="text-[11px] text-gray-600">Encaminhamentos e recomendações</span>
+          <textarea
+            value={clinicalRecord.encaminhamentosRecomendacoes}
+            onChange={(e) =>
+              setClinicalRecord((prev) => ({ ...prev, encaminhamentosRecomendacoes: e.target.value }))
+            }
+            rows={2}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+            placeholder="Encaminhamentos e recomendações acordados; incluir limites do acompanhamento."
+          />
+        </label>
+        <label className="text-sm space-y-1 block">
+          <span className="text-[11px] text-gray-600">Limites do documento</span>
+          <textarea
+            value={clinicalRecord.limitesDocumento}
+            onChange={(e) =>
+              setClinicalRecord((prev) => ({ ...prev, limitesDocumento: e.target.value }))
+            }
+            rows={2}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+            placeholder="Ex.: Documento restrito ao acompanhamento realizado; não substitui avaliação psicológica formal."
+          />
+        </label>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
+          <div className="space-y-1">
+            <p className="text-xs uppercase text-gray-500">Plano de ação / intervenção</p>
+            <label className="text-sm space-y-1 block">
+              <span className="text-[11px] text-gray-600">Objetivos do acompanhamento</span>
+              <textarea
+                value={clinicalRecord.planoObjetivos}
+                onChange={(e) =>
+                  setClinicalRecord((prev) => ({ ...prev, planoObjetivos: e.target.value }))
+                }
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+            <label className="text-sm space-y-1 block">
+              <span className="text-[11px] text-gray-600">Estratégias/recursos propostos</span>
+              <textarea
+                value={clinicalRecord.planoEstrategias}
+                onChange={(e) =>
+                  setClinicalRecord((prev) => ({ ...prev, planoEstrategias: e.target.value }))
+                }
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs uppercase text-gray-500 invisible">.</p>
+            <label className="text-sm space-y-1 block">
+              <span className="text-[11px] text-gray-600">Acordos com o discente</span>
+              <textarea
+                value={clinicalRecord.planoAcordos}
+                onChange={(e) =>
+                  setClinicalRecord((prev) => ({ ...prev, planoAcordos: e.target.value }))
+                }
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+            <label className="text-sm space-y-1 block">
+              <span className="text-[11px] text-gray-600">Encaminhamentos / rede</span>
+              <textarea
+                value={clinicalRecord.planoEncaminhamentos}
+                onChange={(e) =>
+                  setClinicalRecord((prev) => ({ ...prev, planoEncaminhamentos: e.target.value }))
+                }
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+            <label className="text-sm space-y-1 block">
+              <span className="text-[11px] text-gray-600">Critérios de acompanhamento/reavaliação</span>
+              <textarea
+                value={clinicalRecord.planoCriterios}
+                onChange={(e) =>
+                  setClinicalRecord((prev) => ({ ...prev, planoCriterios: e.target.value }))
+                }
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+          </div>
+        </div>
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <button
             type="button"
@@ -331,7 +453,7 @@ export default function MeetingDetalhe() {
             {saving ? 'Salvando...' : 'Salvar registro'}
           </button>
           <p className="text-[11px] text-gray-500">
-            Evite dados sensíveis desnecessários; este registro fica associado ao meeting.
+            Estrutura alinhada ao Manual do CFP para relatório psicológico; campos são opcionais para evitar exigir dados não coletados.
           </p>
         </div>
       </div>
