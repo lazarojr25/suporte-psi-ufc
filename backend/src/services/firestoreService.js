@@ -38,7 +38,13 @@ export async function saveTranscriptionMetadata(data) {
   // - analysis: object (resultado da análise do Gemini)
 
   try {
-    // Simulação de persistência no Firestore
+    if (data?.fileName) {
+      const safeId = data.fileName.replace(/[\/#?]+/g, '_');
+      await db.collection(TRANSCRIPTIONS_COLLECTION).doc(safeId).set(data, { merge: true });
+      console.log(`Metadados de transcrição salvos no Firestore com ID: ${safeId}`);
+      return safeId;
+    }
+
     const docRef = await db.collection(TRANSCRIPTIONS_COLLECTION).add(data);
     console.log(`Metadados de transcrição salvos no Firestore com ID: ${docRef.id}`);
     return docRef.id;

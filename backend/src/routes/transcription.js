@@ -20,6 +20,8 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 const transcriptionService = new TranscriptionService();
+const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos por etapa
+let reprocessInFlight = false;
 
 // Firebase Admin (para vincular meeting/solicitação quando possível)
 let db = null;
@@ -44,37 +46,56 @@ const toSafeBase = (name) =>
   name.replace(/[^\w\d\-_.]+/g, '_').replace(/_+/g, '_');
 
 const removeIfExists = (p) => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {} };
+const removeDir = (dir) => { try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 // Converte qualquer mídia para WAV mono 16 kHz PCM s16le
-const convertToWav16kMono = (inputPath, outDir, baseName) => new Promise((resolve, reject) => {
-  ensureDir(outDir);
-  const outPath = path.join(outDir, `${toSafeBase(baseName)}.wav`);
+const withTimeout = (command, reject) => {
+  const timer = setTimeout(() => {
+    try {
+      command.kill('SIGKILL');
+    } catch (e) {}
+    reject(new Error('Tempo limite excedido ao processar mídia.'));
+  }, FFMPEG_TIMEOUT_MS);
 
-  ffmpeg(inputPath)
-    .outputOptions(['-ac', '1', '-ar', '16000', '-f', 'wav', '-acodec', 'pcm_s16le'])
-    .on('error', reject)
-    .on('end', () => resolve(outPath))
-    .save(outPath);
-});
+  command.on('end', () => clearTimeout(timer));
+  command.on('error', () => clearTimeout(timer));
+};
+
+const convertToWav16kMono = (inputPath, outDir, baseName) =>
+  new Promise((resolve, reject) => {
+    ensureDir(outDir);
+    const outPath = path.join(outDir, `${toSafeBase(baseName)}.wav`);
+
+    const command = ffmpeg(inputPath)
+      .outputOptions(['-ac', '1', '-ar', '16000', '-f', 'wav', '-acodec', 'pcm_s16le'])
+      .on('error', reject)
+      .on('end', () => resolve(outPath))
+      .save(outPath);
+
+    withTimeout(command, reject);
+  });
 
 // Segmenta WAV em partes de ~600s (≈ < 20MB por parte)
-const segmentWav = (wavPath, outDir) => new Promise((resolve, reject) => {
-  ensureDir(outDir);
-  const SEGMENT_SECONDS = 600; // 10 min
-  const pattern = path.join(outDir, 'part-%03d.wav');
+const segmentWav = (wavPath, outDir) =>
+  new Promise((resolve, reject) => {
+    ensureDir(outDir);
+    const SEGMENT_SECONDS = 600; // 10 min
+    const pattern = path.join(outDir, 'part-%03d.wav');
 
-  ffmpeg(wavPath)
-    .outputOptions(['-f', 'segment', `-segment_time`, `${SEGMENT_SECONDS}`, '-c', 'copy'])
-    .on('error', reject)
-    .on('end', () => {
-      const parts = fs.readdirSync(outDir)
-        .filter(f => f.startsWith('part-') && f.endsWith('.wav'))
-        .map(f => path.join(outDir, f))
-        .sort();
-      resolve(parts);
-    })
-    .save(pattern);
-});
+    const command = ffmpeg(wavPath)
+      .outputOptions(['-f', 'segment', `-segment_time`, `${SEGMENT_SECONDS}`, '-c', 'copy'])
+      .on('error', reject)
+      .on('end', () => {
+        const parts = fs.readdirSync(outDir)
+          .filter(f => f.startsWith('part-') && f.endsWith('.wav'))
+          .map(f => path.join(outDir, f))
+          .sort();
+        resolve(parts);
+      })
+      .save(pattern);
+
+    withTimeout(command, reject);
+  });
 
 // ---------------- multer (upload) ----------------
 const storage = multer.diskStorage({
@@ -109,6 +130,9 @@ const upload = multer({
 // POST /api/transcription/upload
 // O campo FormData continua "audio" para manter compatibilidade com o frontend
 router.post('/upload', upload.single('audio'), async (req, res) => {
+  let originalPath = null;
+  let workDir = null;
+  let segDir = null;
   try {
     if (!req.file) {
       return res
@@ -160,7 +184,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
-    const originalPath = req.file.path;
+    originalPath = req.file.path;
     const baseName = path.basename(
       req.file.filename,
       path.extname(req.file.filename)
@@ -168,8 +192,8 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     console.log(`Arquivo recebido: ${req.file.filename}`);
 
     // 1) Converte para WAV 16k mono
-    const workDir = path.join(__dirname, '../../work', baseName);
-    const segDir = path.join(workDir, 'segments');
+    workDir = path.join(__dirname, '../../work', baseName);
+    segDir = path.join(workDir, 'segments');
     ensureDir(workDir);
 
     const wavPath = await convertToWav16kMono(originalPath, workDir, baseName);
@@ -316,6 +340,10 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
       message: 'Erro no processamento de mídia',
       error: error.message,
     });
+  } finally {
+    if (originalPath) removeIfExists(originalPath);
+    if (workDir) removeDir(workDir);
+    if (segDir) removeDir(segDir);
   }
 });
 
@@ -392,6 +420,45 @@ router.post('/analyze', async (req, res) => {
       message: 'Erro na análise do texto',
       error: error.message
     });
+  }
+});
+
+// POST /api/transcription/reprocess-all
+router.post('/reprocess-all', async (req, res) => {
+  try {
+    if (reprocessInFlight) {
+      return res.status(429).json({
+        success: false,
+        message: 'Há um reprocessamento em andamento. Tente novamente em instantes.',
+      });
+    }
+    reprocessInFlight = true;
+    const { discenteId } = req.body || {};
+    const list = await transcriptionService.listTranscriptionsWithMetadata();
+    const filtered = discenteId
+      ? list.filter((t) => t.metadata?.discenteId === discenteId)
+      : list;
+
+    const results = [];
+    for (const item of filtered) {
+      const r = await transcriptionService.reprocessTranscription(item.fileName);
+      results.push({ fileName: item.fileName, success: r.success, message: r.message || null });
+    }
+
+    res.json({
+      success: true,
+      total: filtered.length,
+      results,
+    });
+  } catch (error) {
+    console.error('Erro ao reprocessar transcrições:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao reprocessar transcrições',
+      error: error.message,
+    });
+  } finally {
+    reprocessInFlight = false;
   }
 });
 

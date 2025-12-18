@@ -39,6 +39,50 @@ class TranscriptionService {
     this.modelName = process.env.GEMINI_MODEL || 'gemini-flash-latest';
   }
 
+  formatTranscriptionDocument(transcription, extraInfo = {}, analysis = {}) {
+    const headerLines = [];
+    headerLines.push('=== Dados da sessão ===');
+    if (extraInfo.studentName) headerLines.push(`Discente: ${extraInfo.studentName}`);
+    if (extraInfo.studentId) headerLines.push(`Matrícula: ${extraInfo.studentId}`);
+    if (extraInfo.curso) headerLines.push(`Curso: ${extraInfo.curso}`);
+    if (extraInfo.sessionDate) headerLines.push(`Data da sessão: ${extraInfo.sessionDate}`);
+    if (extraInfo.meetingId) headerLines.push(`Meeting ID: ${extraInfo.meetingId}`);
+    if (extraInfo.solicitacaoId) headerLines.push(`Solicitação ID: ${extraInfo.solicitacaoId}`);
+
+    const summaryBlock = [];
+    summaryBlock.push('=== Resumo automático ===');
+    if (analysis.summary) summaryBlock.push(`Resumo: ${analysis.summary}`);
+    if (analysis.sentiments) {
+      const s = analysis.sentiments;
+      summaryBlock.push(
+        `Sentimentos: +${((s.positive || 0) * 100).toFixed(1)}% / ~${((s.neutral || 0) * 100).toFixed(1)}% / -${((s.negative || 0) * 100).toFixed(1)}%`
+      );
+    }
+    if (Array.isArray(analysis.keywords) && analysis.keywords.length) {
+      summaryBlock.push(`Palavras-chave: ${analysis.keywords.join(', ')}`);
+    }
+    if (Array.isArray(analysis.topics) && analysis.topics.length) {
+      summaryBlock.push(`Tópicos: ${analysis.topics.join(', ')}`);
+    }
+    if (Array.isArray(analysis.actionableInsights) && analysis.actionableInsights.length) {
+      summaryBlock.push('Insights acionáveis:');
+      analysis.actionableInsights.forEach((insight, idx) => {
+        summaryBlock.push(`  ${idx + 1}. ${insight}`);
+      });
+    }
+
+    const body = [
+      headerLines.join('\n'),
+      '',
+      summaryBlock.join('\n'),
+      '',
+      '=== Transcrição ===',
+      transcription,
+    ];
+
+    return body.join('\n');
+  }
+
   ensureDir(dir) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -123,8 +167,14 @@ class TranscriptionService {
         audioPath
       )}.`;
     } finally {
-      // Aqui você poderia apagar o arquivo remoto se a API suportar isso.
-      // Ex.: await this.ai.files.delete({ name: uploadedFile.name });
+      // Remove arquivo enviado para o Gemini (quando disponível)
+      try {
+        if (uploadedFile?.name) {
+          await this.ai.files.delete({ name: uploadedFile.name });
+        }
+      } catch (cleanupErr) {
+        console.warn('Falha ao remover arquivo temporário no Gemini:', cleanupErr?.message);
+      }
     }
 
     const transcription = transcriptionText;
@@ -143,15 +193,16 @@ class TranscriptionService {
 
     // Transcrição final: analisa e salva
     const analysis = await this.analyzeTranscription(transcription);
+    const formatted = this.formatTranscriptionDocument(transcription, extraInfo, analysis);
     const metadata = await this.saveCombinedMetadata(
       outputFileName,
-      transcription,
+      formatted,
       extraInfo,
       analysis
     );
 
     const finalPath = path.join(this.transcriptionsDir, outputFileName);
-    fs.writeFileSync(finalPath, transcription, 'utf-8');
+    fs.writeFileSync(finalPath, formatted, 'utf-8');
 
     return {
       success: true,
@@ -168,15 +219,16 @@ class TranscriptionService {
    */
   async saveFinalTranscription(outputFileName, mergedText, extraInfo = {}) {
     const analysis = await this.analyzeTranscription(mergedText);
+    const formatted = this.formatTranscriptionDocument(mergedText, extraInfo, analysis);
     const metadata = await this.saveCombinedMetadata(
       outputFileName,
-      mergedText,
+      formatted,
       extraInfo,
       analysis
     );
 
     const finalPath = path.join(this.transcriptionsDir, outputFileName);
-    fs.writeFileSync(finalPath, mergedText, 'utf-8');
+    fs.writeFileSync(finalPath, formatted, 'utf-8');
 
     return {
       success: true,
@@ -191,17 +243,17 @@ class TranscriptionService {
    * Analisa a transcrição com Gemini: sentimentos, keywords, tópicos, resumo…
    */
   async analyzeTranscription(text) {
-    const prompt = `Analise o texto da transcrição a seguir e retorne um objeto JSON com as seguintes chaves:
-1. "sentiments": objeto { "positive": 0.0, "neutral": 0.0, "negative": 0.0 }
-2. "keywords": array de até 10 palavras-chave ou frases importantes (sem artigos/preposições isoladas)
-3. "topics": array de até 5 tópicos principais
+    const prompt = `Analise o texto de uma transcrição de sessão psicológica e retorne APENAS um JSON com:
+1. "sentiments": objeto { "positive": 0.0, "neutral": 0.0, "negative": 0.0 } (valores entre 0 e 1)
+2. "keywords": até 10 palavras-chave ou frases (sem artigos/preposições isoladas)
+3. "topics": até 5 tópicos principais
 4. "summary": resumo conciso (máx. 3 frases)
-5. "actionableInsights": array de 3 a 5 sugestões de ações ou observações para o profissional
+5. "actionableInsights": 3 a 5 sugestões de ações/observações clínicas
 
 Texto a ser analisado:
 "${text}"
 
-Retorne APENAS o JSON, sem markdown ou texto extra.`;
+Retorne somente o JSON, sem markdown.`;
 
     try {
       const result = await this.ai.models.generateContent({
@@ -309,6 +361,36 @@ Retorne APENAS o JSON, sem markdown ou texto extra.`;
       };
     }
     return null;
+  }
+
+  /**
+   * Reprocessa uma transcrição existente (reanálise e regravação formatada).
+   */
+  async reprocessTranscription(fileName) {
+    const filePath = path.join(this.transcriptionsDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      return { success: false, message: 'Arquivo de transcrição não encontrado' };
+    }
+
+    const metadataAll = this.loadMetadata();
+    const entry = metadataAll[fileName];
+    const extraInfo = entry?.metadata || {};
+    const fullContent = fs.readFileSync(filePath, 'utf-8');
+    // Se já estiver formatado, isola apenas a transcrição bruta para não duplicar cabeçalhos
+    const separator = '=== Transcrição ===';
+    const separatorIndex = fullContent.indexOf(separator);
+    const content =
+      separatorIndex !== -1
+        ? fullContent.slice(separatorIndex + separator.length).trimStart()
+        : fullContent;
+
+    const analysis = await this.analyzeTranscription(content);
+    const formatted = this.formatTranscriptionDocument(content, extraInfo, analysis);
+    await this.saveCombinedMetadata(fileName, formatted, extraInfo, analysis);
+
+    fs.writeFileSync(filePath, formatted, 'utf-8');
+
+    return { success: true, fileName, analysis };
   }
 }
 

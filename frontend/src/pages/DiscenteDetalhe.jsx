@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   doc,
   getDoc,
@@ -14,6 +14,7 @@ import apiService from '../services/api';
 export default function DiscenteDetalhe() {
   const { discenteId } = useParams();
   const navigate = useNavigate();
+  const { role } = useOutletContext() || {};
 
   const [discente, setDiscente] = useState(null);
   const [solicitacoes, setSolicitacoes] = useState([]);
@@ -25,6 +26,9 @@ export default function DiscenteDetalhe() {
   const [relatorioDiscente, setRelatorioDiscente] = useState(null);
 
   const [error, setError] = useState(null);
+  const [reprocessMsg, setReprocessMsg] = useState(null);
+  const [reprocessErr, setReprocessErr] = useState(null);
+  const [reprocessing, setReprocessing] = useState(false);
 
   // ⭐ Meetings do sistema (vamos filtrar por discente depois)
   const [allMeetings, setAllMeetings] = useState([]);
@@ -151,6 +155,77 @@ export default function DiscenteDetalhe() {
     )
     .slice(0, 6);
   const insightsHighlight = aggregatedInsights.slice(0, 2);
+  const sentimentTimeline = orderedTranscricoes
+    .filter((t) => t.analysis?.sentiments)
+    .map((t) => ({
+      dateLabel: t.createdAt
+        ? new Date(t.createdAt).toLocaleDateString('pt-BR')
+        : '---',
+      sentiments: t.analysis.sentiments,
+    }));
+
+  const negativeTrendAlert = (() => {
+    if (sentimentTimeline.length < 2) return null;
+    const last = sentimentTimeline[0].sentiments;
+    const prevAvg = sentimentTimeline
+      .slice(1, 4)
+      .reduce(
+        (acc, s, idx, arr) => {
+          acc.positive += s.sentiments.positive || 0;
+          acc.negative += s.sentiments.negative || 0;
+          return idx === arr.length - 1 ? acc : acc;
+        },
+        { positive: 0, negative: 0 }
+      );
+    const prevCount = Math.min(3, sentimentTimeline.length - 1);
+    if (prevCount > 0) {
+      prevAvg.positive /= prevCount;
+      prevAvg.negative /= prevCount;
+    }
+    const negDiff = (last.negative || 0) - (prevAvg.negative || 0);
+    const posDiff = (last.positive || 0) - (prevAvg.positive || 0);
+    if (negDiff >= 0.15 || posDiff <= -0.15) {
+      return 'Tendência de piora nos sentimentos recentes.';
+    }
+    return null;
+  })();
+
+  const dedupInsights = (() => {
+    const map = new Map();
+    orderedTranscricoes.forEach((t) => {
+      (t.analysis?.actionableInsights || []).forEach((insight) => {
+        if (!insight) return;
+        map.set(insight, (map.get(insight) || 0) + 1);
+      });
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([text, count]) => ({ text, count }));
+  })();
+
+  const handleReprocessDiscente = async () => {
+    setReprocessing(true);
+    setReprocessErr(null);
+    setReprocessMsg(null);
+    try {
+      const res = await apiService.reprocessAllTranscriptions(discente.id);
+      if (res?.success) {
+        setReprocessMsg(`Reprocessadas ${res.total} transcrições deste discente.`);
+        const rel = await apiService.getReportsByDiscente(discenteId);
+        if (rel?.success && rel.data) {
+          setRelatorioDiscente(rel.data);
+          setTranscricoes(rel.data.transcriptions || []);
+        }
+      } else {
+        setReprocessErr(res?.message || 'Falha ao reprocessar.');
+      }
+    } catch (err) {
+      console.error(err);
+      setReprocessErr(err.message || 'Erro ao reprocessar.');
+    } finally {
+      setReprocessing(false);
+    }
+  };
   const historyListSections = [
     { key: 'recurringThemes', label: 'Temas recorrentes' },
     { key: 'repeatedIdeas', label: 'Ideias repetidas' },
@@ -396,6 +471,22 @@ export default function DiscenteDetalhe() {
                 {solicitacoes.length}
               </p>
             </div>
+            <div className="md:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleReprocessDiscente}
+                disabled={reprocessing}
+                className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+              >
+                {reprocessing ? 'Reprocessando...' : 'Reprocessar transcrições'}
+              </button>
+              {(reprocessMsg || reprocessErr) && (
+                <span className="text-[11px] text-gray-600">
+                  {reprocessMsg && <span className="text-green-600">{reprocessMsg}</span>}
+                  {reprocessErr && <span className="text-red-600">{reprocessErr}</span>}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -511,6 +602,11 @@ export default function DiscenteDetalhe() {
           <p className="text-xs uppercase text-gray-500 tracking-wide">
             Insights em foco
           </p>
+          {negativeTrendAlert && (
+            <p className="text-xs text-red-600">
+              {negativeTrendAlert}
+            </p>
+          )}
           {insightsHighlight.length > 0 ? (
             <ul className="space-y-2">
               {insightsHighlight.map((item, idx) => (
@@ -878,15 +974,47 @@ export default function DiscenteDetalhe() {
                     );
                   })}
                 </div>
-                {!historyListSections.some(
-                  (section) =>
-                    Array.isArray(historyPatterns?.[section.key]) &&
-                    historyPatterns[section.key].length > 0
-                ) && (
-                  <p className="text-gray-500">Nenhum padrão identificado até o momento.</p>
-                )}
-              </div>
+            {!historyListSections.some(
+              (section) =>
+                Array.isArray(historyPatterns?.[section.key]) &&
+                historyPatterns[section.key].length > 0
+            ) && (
+              <p className="text-gray-500">Nenhum padrão identificado até o momento.</p>
             )}
+          </div>
+        )}
+
+        {sentimentTimeline.length > 0 && (
+          <div className="mb-4 border rounded-lg p-4 bg-white text-sm">
+            <h3 className="font-semibold mb-2 text-gray-800">Linha do tempo de sentimentos</h3>
+            <ul className="space-y-1">
+              {sentimentTimeline.map((item, idx) => (
+                <li key={`${item.dateLabel}-${idx}`} className="flex flex-wrap justify-between">
+                  <span className="text-gray-700">{item.dateLabel}</span>
+                  <span className="text-[11px] text-gray-600">
+                    +{((item.sentiments.positive || 0) * 100).toFixed(0)}% /
+                    ~{((item.sentiments.neutral || 0) * 100).toFixed(0)}% /
+                    -{((item.sentiments.negative || 0) * 100).toFixed(0)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {dedupInsights.length > 0 && (
+          <div className="mb-4 border rounded-lg p-4 bg-white text-sm">
+            <h3 className="font-semibold mb-2 text-gray-800">Insights recorrentes</h3>
+            <ul className="space-y-1">
+              {dedupInsights.map((item) => (
+                <li key={item.text} className="flex justify-between gap-2">
+                  <span className="text-gray-700">{item.text}</span>
+                  <span className="text-[11px] text-gray-500">{item.count}x</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
             {/* Lista de transcrições */}
             <ul className="space-y-2 text-sm">
@@ -922,6 +1050,11 @@ export default function DiscenteDetalhe() {
                   {t.analysis?.summary && (
                     <p className="mt-2 text-gray-700 text-sm leading-relaxed">
                       {t.analysis.summary}
+                    </p>
+                  )}
+                  {!t.analysis && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      Análise pendente ou indisponível para esta transcrição.
                     </p>
                   )}
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px]">

@@ -103,6 +103,23 @@ export default function MeetingDetalhe() {
 
   const handleUpload = async () => {
     if (!meeting || !selectedFile) return;
+
+    const allowedExts = ['.mp3', '.wav', '.m4a', '.ogg', '.mp4', '.mov', '.webm', '.mkv', '.avi'];
+    const maxSize = 500 * 1024 * 1024; // 500MB (limite do backend)
+    const ext = selectedFile.name
+      .toLowerCase()
+      .slice(selectedFile.name.lastIndexOf('.'));
+
+    if (!allowedExts.includes(ext)) {
+      setUploadErr('Formato não suportado. Use: MP3, WAV, M4A, OGG, MP4, MOV, WEBM, MKV ou AVI.');
+      return;
+    }
+    if (selectedFile.size > maxSize) {
+      setUploadErr(
+        `Arquivo muito grande (${(selectedFile.size / (1024 * 1024)).toFixed(1)}MB). Limite: ${maxSize / (1024 * 1024)}MB.`
+      );
+      return;
+    }
     setUploading(true);
     setUploadErr(null);
     setUploadMsg(null);
@@ -300,6 +317,9 @@ export default function MeetingDetalhe() {
           onChange={(e) => setSelectedFile(e.target.files[0] || null)}
           className="text-sm"
         />
+        <p className="text-[11px] text-gray-500">
+          Formatos aceitos: MP3, WAV, M4A, OGG, MP4, MOV, WEBM, MKV, AVI. Limite: 500MB.
+        </p>
         <button
           type="button"
           onClick={handleUpload}

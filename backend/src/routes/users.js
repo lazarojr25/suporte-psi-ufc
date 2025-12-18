@@ -29,12 +29,21 @@ router.post('/', async (req, res) => {
     }
 
     const { email, password, role = 'staff' } = req.body || {};
-    if (!email || !password) {
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const normalizedRole = role === 'admin' ? 'admin' : 'staff';
+
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ success: false, message: 'E-mail e senha são obrigatórios.' });
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: 'E-mail inválido.' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ success: false, message: 'Senha deve ter ao menos 8 caracteres.' });
     }
 
     const userRecord = await auth.createUser({
-      email,
+      email: normalizedEmail,
       password,
       emailVerified: false,
       disabled: false,
@@ -42,8 +51,8 @@ router.post('/', async (req, res) => {
 
     try {
       await db.collection('users').doc(userRecord.uid).set({
-        email,
-        role,
+        email: normalizedEmail,
+        role: normalizedRole,
         createdAt: new Date().toISOString(),
       }, { merge: true });
     } catch (fireErr) {
@@ -57,9 +66,14 @@ router.post('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao criar usuário pelo Admin SDK:', error);
+    const code = error?.code || '';
+    let message = error?.message || 'Falha ao criar usuário.';
+    if (code === 'auth/email-already-exists') message = 'E-mail já cadastrado.';
+    if (code === 'auth/invalid-password') message = 'Senha inválida (mínimo 6 caracteres pelo Auth).';
     return res.status(500).json({
       success: false,
-      message: error.message || 'Falha ao criar usuário.',
+      message,
+      code,
     });
   }
 });

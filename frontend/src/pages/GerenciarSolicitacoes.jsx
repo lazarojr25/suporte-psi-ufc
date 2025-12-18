@@ -8,6 +8,15 @@ import {
 } from 'firebase/firestore';
 import { Link, useNavigate } from 'react-router-dom';
 
+const BASE_CURSOS = [
+  'Ciência da Computação',
+  'Engenharia de Computação',
+  'Engenharia de Software',
+  'Sistemas da Informação',
+  'Redes de Computadores',
+  'Design Digital',
+];
+
 export default function GerenciarSolicitacoes() {
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +148,18 @@ export default function GerenciarSolicitacoes() {
     });
   }, [solicitacoes, searchName, searchMatricula, startDate, endDate, curso]);
 
+  const cursoOptions = useMemo(() => {
+    const set = new Set(BASE_CURSOS);
+    solicitacoes.forEach((s) => {
+      if (s.curso) {
+        set.add(s.curso);
+      }
+    });
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, 'pt', { sensitivity: 'base' })
+    );
+  }, [solicitacoes]);
+
   const pendentes = filteredSolicitacoes.filter(
     (s) => normalizeStatus(s.status) === 'pendente'
   );
@@ -202,13 +223,18 @@ export default function GerenciarSolicitacoes() {
             <label className="block text-xs uppercase text-gray-600 mb-1">
               Curso
             </label>
-            <input
-              type="text"
+            <select
               value={curso}
               onChange={(e) => setCurso(e.target.value)}
-              placeholder="Curso ex: Engenharia de Software"
               className="w-full border rounded-lg px-3 py-2"
-            />
+            >
+              <option value="">Todos</option>
+              {cursoOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs uppercase text-gray-600 mb-1">

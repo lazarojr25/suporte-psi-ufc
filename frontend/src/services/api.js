@@ -209,6 +209,13 @@ class ApiService {
     });
   }
 
+  async reprocessAllTranscriptions(discenteId) {
+    return this.request('/transcription/reprocess-all', {
+      method: 'POST',
+      body: JSON.stringify({ discenteId }),
+    });
+  }
+
   // ------------------ Limite de sessões ------------------
 
   async canScheduleForDiscente(discenteId) {

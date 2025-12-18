@@ -13,6 +13,13 @@ import attendanceConfigRoutes from './routes/attendanceConfig.js';
 import solicitacaoRoutes from './routes/solicitacoes.js';
 import usersRoutes from './routes/users.js';
 
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 
 // Configurar __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
