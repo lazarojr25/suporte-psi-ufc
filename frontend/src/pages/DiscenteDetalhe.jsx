@@ -7,6 +7,8 @@ import {
   query,
   where,
   getDocs,
+  addDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import apiService from '../services/api';
@@ -29,6 +31,7 @@ export default function DiscenteDetalhe() {
   const [reprocessMsg, setReprocessMsg] = useState(null);
   const [reprocessErr, setReprocessErr] = useState(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
 
   // ⭐ Meetings do sistema (vamos filtrar por discente depois)
   const [allMeetings, setAllMeetings] = useState([]);
@@ -208,7 +211,7 @@ export default function DiscenteDetalhe() {
     setReprocessErr(null);
     setReprocessMsg(null);
     try {
-      const res = await apiService.reprocessAllTranscriptions(discente.id);
+      const res = await apiService.reprocessAllTranscriptions(discente.id, { force: true });
       if (res?.success) {
         setReprocessMsg(`Reprocessadas ${res.total} transcrições deste discente.`);
         const rel = await apiService.getReportsByDiscente(discenteId);
@@ -224,6 +227,31 @@ export default function DiscenteDetalhe() {
       setReprocessErr(err.message || 'Erro ao reprocessar.');
     } finally {
       setReprocessing(false);
+    }
+  };
+
+  const handleAgendarNovaSessao = async () => {
+    if (!discente) return;
+    try {
+      setCreatingSession(true);
+      setError(null);
+      const payload = {
+        discenteId: discente.id,
+        motivation: 'Sessão adicional iniciada pela equipe',
+        status: 'pendente',
+        createdAt: serverTimestamp(),
+        name: discente.name || '',
+        email: discente.email || '',
+        studentId: discente.studentId || '',
+        curso: discente.curso || '',
+      };
+      const docRef = await addDoc(collection(db, 'solicitacoesAtendimento'), payload);
+      navigate(`/agendar-atendimento/${docRef.id}`);
+    } catch (err) {
+      console.error(err);
+      setError('Não foi possível criar nova solicitação para agendamento.');
+    } finally {
+      setCreatingSession(false);
     }
   };
   const historyListSections = [
@@ -472,6 +500,14 @@ export default function DiscenteDetalhe() {
               </p>
             </div>
             <div className="md:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleAgendarNovaSessao}
+                disabled={creatingSession || isBlockedByLimit}
+                className="px-3 py-2 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {creatingSession ? 'Criando...' : 'Agendar nova sessão'}
+              </button>
               <button
                 type="button"
                 onClick={handleReprocessDiscente}

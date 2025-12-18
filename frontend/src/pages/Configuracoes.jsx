@@ -70,7 +70,7 @@ export default function Configuracoes() {
     setReprocessErr(null);
     setReprocessMsg(null);
     try {
-      const res = await apiService.reprocessAllTranscriptions();
+      const res = await apiService.reprocessAllTranscriptions(undefined, { force: true });
       if (res?.success) {
         setReprocessMsg(`Reprocessadas ${res.total} transcrições.`);
       } else {

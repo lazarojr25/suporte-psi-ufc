@@ -36,6 +36,10 @@ export default function MeetingDetalhe() {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState(null);
   const [uploadErr, setUploadErr] = useState(null);
+  const [selectedTxt, setSelectedTxt] = useState(null);
+  const [txtUploading, setTxtUploading] = useState(false);
+  const [txtMsg, setTxtMsg] = useState(null);
+  const [txtErr, setTxtErr] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -159,6 +163,59 @@ export default function MeetingDetalhe() {
       setUploadErr('Não foi possível enviar a transcrição.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleTxtUpload = async () => {
+    if (!meeting || !selectedTxt) return;
+    setTxtUploading(true);
+    setTxtErr(null);
+    setTxtMsg(null);
+
+    try {
+      const sessionDate =
+        meeting.scheduledDate ||
+        (meeting.dateTime
+          ? new Date(meeting.dateTime).toISOString().slice(0, 10)
+          : null) ||
+        new Date().toISOString().slice(0, 10);
+
+      const extra = {
+        meetingId,
+        solicitacaoId: meeting.solicitacaoId || '',
+        discenteId: meeting.discenteId || '',
+        studentName: meeting.studentName || '',
+        studentEmail: meeting.studentEmail || '',
+        studentId: meeting.studentId || '',
+        curso: meeting.curso || '',
+        sessionDate,
+      };
+
+      const res = await apiService.uploadTranscriptText(selectedTxt, extra);
+
+      if (!res?.success) {
+        throw new Error(res?.message || 'Falha ao processar TXT.');
+      }
+
+      try {
+        await apiService.updateMeeting(meetingId, { status: 'concluida' });
+      } catch (e) {
+        console.warn('Falha ao atualizar status após upload TXT:', e);
+      }
+
+      setTxtMsg('Transcrição pronta analisada e sessão marcada como concluída.');
+      setSelectedTxt(null);
+      const input = document.getElementById('txtTranscriptionFile');
+      if (input) input.value = '';
+      const updated = await apiService.getMeeting(meetingId);
+      if (updated?.success && updated.data) {
+        setMeeting(updated.data?.data || updated.data);
+      }
+    } catch (err) {
+      console.error(err);
+      setTxtErr(err?.message || 'Não foi possível processar o TXT.');
+    } finally {
+      setTxtUploading(false);
     }
   };
 
@@ -310,24 +367,53 @@ export default function MeetingDetalhe() {
           <p className="text-xs uppercase text-gray-500">Transcrição</p>
           {uploadMsg && <span className="text-[11px] text-green-600">{uploadMsg}</span>}
           {uploadErr && <span className="text-[11px] text-red-600">{uploadErr}</span>}
+          {txtMsg && <span className="text-[11px] text-green-600">{txtMsg}</span>}
+          {txtErr && <span className="text-[11px] text-red-600">{txtErr}</span>}
         </div>
-        <input
-          type="file"
-          accept="audio/*,video/*"
-          onChange={(e) => setSelectedFile(e.target.files[0] || null)}
-          className="text-sm"
-        />
-        <p className="text-[11px] text-gray-500">
-          Formatos aceitos: MP3, WAV, M4A, OGG, MP4, MOV, WEBM, MKV, AVI. Limite: 500MB.
-        </p>
-        <button
-          type="button"
-          onClick={handleUpload}
-          disabled={uploading || !selectedFile}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
-        >
-          {uploading ? 'Enviando...' : 'Enviar transcrição e concluir'}
-        </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <p className="text-[11px] text-gray-600 uppercase">Áudio/Vídeo</p>
+            <input
+              type="file"
+              accept="audio/*,video/*"
+              onChange={(e) => setSelectedFile(e.target.files[0] || null)}
+              className="text-sm"
+            />
+            <p className="text-[11px] text-gray-500">
+              Formatos: MP3, WAV, M4A, OGG, MP4, MOV, WEBM, MKV, AVI. Limite: 500MB.
+            </p>
+            <button
+              type="button"
+              onClick={handleUpload}
+              disabled={uploading || !selectedFile}
+              className="px-4 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
+            >
+              {uploading ? 'Enviando...' : 'Enviar e transcrever'}
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] text-gray-600 uppercase">Transcrição pronta (.txt)</p>
+            <input
+              id="txtTranscriptionFile"
+              type="file"
+              accept=".txt,text/plain"
+              onChange={(e) => setSelectedTxt(e.target.files[0] || null)}
+              className="text-sm"
+            />
+            <p className="text-[11px] text-gray-500">
+              Envie o .txt exportado pelo Meet; faremos apenas a análise e vínculo.
+            </p>
+            <button
+              type="button"
+              onClick={handleTxtUpload}
+              disabled={txtUploading || !selectedTxt}
+              className="px-4 py-2 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {txtUploading ? 'Processando...' : 'Enviar TXT e analisar'}
+            </button>
+          </div>
+        </div>
         {meeting.status === 'concluida' && (
           <p className="text-[11px] text-gray-500">
             Esta sessão está marcada como concluída.

@@ -8,10 +8,34 @@ export default function Relatorios() {
   const [highlights, setHighlights] = useState({ topKeywords: [], topTopics: [] });
   const [timeline, setTimeline] = useState([]);
   const [bestPeriod, setBestPeriod] = useState(null);
+  const [solicitacoes, setSolicitacoes] = useState({ total: 0, timeline: [], peak: null });
+  const [comparativo, setComparativo] = useState([]);
+  const [atendimentosTimeline, setAtendimentosTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const maxTimeline = Math.max(
+    1,
+    ...timeline.map((t) => t.count || 0)
+  );
+  const maxCourseCount = Math.max(
+    1,
+    ...byCourse.map((c) => c.count || 0)
+  );
+  const maxSolicTimeline = Math.max(
+    1,
+    ...solicitacoes.timeline.map((t) => t.count || 0)
+  );
+  const maxAtendimentosTimeline = Math.max(
+    1,
+    ...atendimentosTimeline.map((t) => t.count || t.atendimentosConcluidos || 0)
+  );
+  const maxComparativo = Math.max(
+    1,
+    ...comparativo.map((t) => Math.max(t.solicitacoes || 0, t.atendimentosConcluidos || 0))
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -25,6 +49,9 @@ export default function Relatorios() {
           setHighlights(res.highlights || { topKeywords: [], topTopics: [] });
           setTimeline(res.timeline || []);
           setBestPeriod(res.periodWithMostRequests || null);
+          setSolicitacoes(res.solicitacoes || { total: 0, timeline: [], peak: null });
+          setComparativo(res.comparativo || []);
+          setAtendimentosTimeline(res.atendimentosTimeline || []);
         } else {
           setError('Falha ao carregar relatórios.');
         }
@@ -138,61 +165,180 @@ export default function Relatorios() {
                 {Math.round((overview.avgSizeBytes || 0) / 1024)}
               </p>
             </div>
+
+            <div className="bg-white rounded-xl shadow p-4">
+              <p className="text-gray-500 text-sm">Solicitações registradas</p>
+              <p className="text-2xl font-semibold">
+                {solicitacoes.total || 0}
+              </p>
+            </div>
           </div>
 
           {/* Sentimento médio geral, se existir */}
           {overview.sentimentsAvg && (
             <div className="bg-white rounded-xl shadow p-4 text-sm">
-              <p className="font-semibold mb-1">Sentimento médio geral</p>
-              <p className="text-gray-700">
-                Positivo:{' '}
-                {(overview.sentimentsAvg.positive * 100).toFixed(1)}% &nbsp;|&nbsp;
-                Neutro:{' '}
-                {(overview.sentimentsAvg.neutral * 100).toFixed(1)}% &nbsp;|&nbsp;
-                Negativo:{' '}
-                {(overview.sentimentsAvg.negative * 100).toFixed(1)}%
-              </p>
+              <p className="font-semibold mb-3">Sentimento médio geral</p>
+              <div className="space-y-2">
+                {[
+                  { label: 'Positivo', value: overview.sentimentsAvg.positive, color: 'bg-emerald-500' },
+                  { label: 'Neutro', value: overview.sentimentsAvg.neutral, color: 'bg-amber-400' },
+                  { label: 'Negativo', value: overview.sentimentsAvg.negative, color: 'bg-rose-500' },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-gray-700">{item.label}</span>
+                      <span className="text-gray-900 font-semibold">
+                        {(item.value * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2.5">
+                      <div
+                        className={`${item.color} h-2.5 rounded-full transition-all`}
+                        style={{ width: `${Math.min(100, Math.max(0, item.value * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Período com mais solicitações + tendência */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl shadow p-4 lg:col-span-1">
-              <h2 className="text-lg font-semibold mb-3">Período em destaque</h2>
-              {!bestPeriod ? (
-                <p className="text-sm text-gray-500">Sem dados suficientes.</p>
-              ) : (
-                <div>
-                  <p className="text-sm text-gray-600">Período de maior demanda</p>
-                  <p className="text-2xl font-semibold text-gray-900">
-                    {bestPeriod.periodLabel}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {bestPeriod.count} atendimentos registrados
-                  </p>
-                </div>
+          {/* Solicitações por mês */}
+          <div className="bg-white rounded-xl shadow p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <h2 className="text-lg font-semibold">Solicitações por mês</h2>
+              {solicitacoes.peak && (
+                <span className="text-sm text-gray-600">
+                  Pico: {solicitacoes.peak.periodLabel} ({solicitacoes.peak.count})
+                </span>
               )}
             </div>
-
-            <div className="bg-white rounded-xl shadow p-4 lg:col-span-2 overflow-x-auto">
-              <h2 className="text-lg font-semibold mb-3">Evolução mensal</h2>
-              {!timeline.length ? (
-                <p className="text-sm text-gray-500">Sem dados temporais.</p>
-              ) : (
-                <div className="flex gap-4 min-w-full">
-                  {timeline.map((point) => (
-                    <div key={point.period} className="flex flex-col items-center text-xs">
-                      <div className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg font-semibold">
-                        {point.count}
+            {!solicitacoes.timeline.length ? (
+              <p className="text-sm text-gray-500">Sem solicitações registradas.</p>
+            ) : (
+              <div className="min-w-full">
+                <div className="flex items-end gap-3 h-40">
+                  {solicitacoes.timeline.map((point) => {
+                    const heightPct = Math.max(
+                      6,
+                      Math.round((point.count / maxSolicTimeline) * 100)
+                    );
+                    return (
+                      <div key={point.period} className="flex flex-col items-center flex-1 min-w-[60px]">
+                        <div
+                          className="w-full max-w-[32px] bg-purple-100 rounded-t-md flex items-end justify-center"
+                          style={{ height: `${heightPct}%` }}
+                        >
+                          <span className="text-[11px] font-semibold text-purple-800 pb-1">
+                            {point.count}
+                          </span>
+                        </div>
+                        <span className="mt-2 text-[11px] text-gray-600 text-center leading-tight">
+                          {point.periodLabel}
+                        </span>
                       </div>
-                      <span className="mt-1 text-gray-600">
-                        {point.periodLabel}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
+
+          {/* Atendimentos concluídos por mês */}
+          <div className="bg-white rounded-xl shadow p-4">
+            <h2 className="text-lg font-semibold mb-3">Atendimentos concluídos por mês</h2>
+            {!atendimentosTimeline.length ? (
+              <p className="text-sm text-gray-500">Sem atendimentos concluídos registrados.</p>
+            ) : (
+              <div className="min-w-full">
+                <div className="flex items-end gap-3 h-40">
+                  {atendimentosTimeline.map((point) => {
+                    const count = point.count ?? point.atendimentosConcluidos ?? 0;
+                    const heightPct = Math.max(
+                      6,
+                      Math.round((count / maxAtendimentosTimeline) * 100)
+                    );
+                    return (
+                      <div key={point.period} className="flex flex-col items-center flex-1 min-w-[60px]">
+                        <div
+                          className="w-full max-w-[32px] bg-sky-100 rounded-t-md flex items-end justify-center"
+                          style={{ height: `${heightPct}%` }}
+                        >
+                          <span className="text-[11px] font-semibold text-sky-800 pb-1">
+                            {count}
+                          </span>
+                        </div>
+                        <span className="mt-2 text-[11px] text-gray-600 text-center leading-tight">
+                          {point.periodLabel}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Comparativo solicitações x atendimentos concluídos */}
+          <div className="bg-white rounded-xl shadow p-4 lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-3">Solicitações x Atendimentos concluídos</h2>
+            {!comparativo.length ? (
+              <p className="text-sm text-gray-500">Sem dados para comparação.</p>
+            ) : (
+              <div className="min-w-full">
+                <div className="flex items-end gap-4 h-48">
+                  {comparativo.map((point) => {
+                    const solicitHeight = Math.max(
+                      6,
+                      Math.round((point.solicitacoes / maxComparativo) * 100)
+                    );
+                    const atendHeight = Math.max(
+                      6,
+                      Math.round((point.atendimentosConcluidos / maxComparativo) * 100)
+                    );
+                    return (
+                      <div
+                        key={point.period}
+                        className="flex flex-col items-center flex-1 min-w-[70px] gap-2"
+                      >
+                        <div className="flex items-end gap-1 w-full">
+                          <div
+                            className="flex-1 max-w-[32px] bg-purple-200 rounded-t-md flex items-end justify-center"
+                            style={{ height: `${solicitHeight}%` }}
+                          >
+                            <span className="text-[10px] font-semibold text-purple-800 pb-1">
+                              {point.solicitacoes}
+                            </span>
+                          </div>
+                          <div
+                            className="flex-1 max-w-[32px] bg-sky-200 rounded-t-md flex items-end justify-center"
+                            style={{ height: `${atendHeight}%` }}
+                          >
+                            <span className="text-[10px] font-semibold text-sky-800 pb-1">
+                              {point.atendimentosConcluidos}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-gray-600 text-center leading-tight">
+                          {point.periodLabel}
+                        </span>
+                        <span className="text-[10px] text-gray-500 text-center">
+                          Solicitações vs. Concluídos
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-3 text-[11px] text-gray-600">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm bg-purple-200 border border-purple-300" /> Solicitações
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-sm bg-sky-200 border border-sky-300" /> Atendimentos concluídos
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tabela por curso */}
@@ -221,7 +367,22 @@ export default function Relatorios() {
                 {byCourse.map((c) => (
                   <tr key={c.course} className="border-b last:border-b-0">
                     <td className="px-4 py-2">{c.course}</td>
-                    <td className="px-4 py-2">{c.count}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-800 font-medium">{c.count}</span>
+                        <div className="flex-1 h-2 bg-gray-100 rounded-full">
+                          <div
+                            className="h-2 rounded-full bg-blue-500"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.round((c.count / maxCourseCount) * 100)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-4 py-2">{c.distinctStudents}</td>
                     <td className="px-4 py-2 text-gray-600">
                       {c.lastTranscriptionAt

@@ -124,6 +124,21 @@ class ApiService {
     });
   }
 
+  async uploadTranscriptText(file, extraMeta = {}) {
+    const formData = new FormData();
+    formData.append('transcript', file);
+    Object.entries(extraMeta).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        formData.append(key, value);
+      }
+    });
+
+    return this.request('/transcription/upload-text', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   // --- Transcrições por discente ---
   async getTranscriptionsByDiscente(discenteId) {
     return this.request(`/transcription/by-discente/${discenteId}`);
@@ -209,10 +224,16 @@ class ApiService {
     });
   }
 
-  async reprocessAllTranscriptions(discenteId) {
+  async reprocessAllTranscriptions(discenteId, { force = true } = {}) {
     return this.request('/transcription/reprocess-all', {
       method: 'POST',
-      body: JSON.stringify({ discenteId }),
+      body: JSON.stringify({ discenteId, force }),
+    });
+  }
+
+  async deleteTranscription(fileName) {
+    return this.request(`/transcription/${fileName}`, {
+      method: 'DELETE',
     });
   }
 

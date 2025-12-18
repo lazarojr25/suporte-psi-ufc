@@ -1,10 +1,27 @@
 import TranscriptionService from '../services/transcriptionService.js';
 import express from 'express';
 import PDFDocument from 'pdfkit';
+import { initializeApp, applicationDefault } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const router = express.Router();
 
 const transcriptionService = new TranscriptionService();
+
+// Firestore (para consultar solicitações)
+let db = null;
+try {
+  initializeApp({
+    credential: applicationDefault(),
+  });
+  db = getFirestore();
+} catch (error) {
+  if (/already exists/u.test(error.message)) {
+    db = getFirestore();
+  } else {
+    console.error('Erro ao inicializar Firebase Admin em reports:', error);
+  }
+}
 /**
  * Agrupa e ordena frequência de termos (keywords, tópicos, etc.)
  */
@@ -129,8 +146,29 @@ function buildDiscentePatterns(transcriptions = []) {
   };
 }
 
+async function loadSolicitacoes() {
+  if (!db) return [];
+  try {
+    const snap = await db.collection('solicitacoesAtendimento').get();
+    return snap.docs.map((d) => {
+      const data = d.data() || {};
+      return {
+        id: d.id,
+        ...data,
+        createdAt: data.createdAt?.toDate
+          ? data.createdAt.toDate().toISOString()
+          : data.createdAt || null,
+      };
+    });
+  } catch (err) {
+    console.warn('Falha ao carregar solicitações:', err?.message);
+    return [];
+  }
+}
+
 async function computeOverviewData() {
   const all = await transcriptionService.listTranscriptionsWithMetadata();
+  const solicitacoes = await loadSolicitacoes();
 
   const totalTranscriptions = all.length;
   const totalSizeBytes = all.reduce((sum, t) => sum + (t.size || 0), 0);
@@ -241,6 +279,39 @@ async function computeOverviewData() {
   const topKeywords = buildFrequencyMap(allKeywords).slice(0, 10);
   const topTopics = buildFrequencyMap(allTopics).slice(0, 10);
 
+  // Timeline de solicitações por mês
+  const solicTimelineMap = new Map();
+  for (const s of solicitacoes) {
+    if (!s.createdAt) continue;
+    const createdAt = new Date(s.createdAt);
+    if (Number.isNaN(createdAt)) continue;
+    const year = createdAt.getFullYear();
+    const monthIndex = createdAt.getMonth();
+    const periodKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+    if (!solicTimelineMap.has(periodKey)) {
+      const monthDate = new Date(year, monthIndex, 1);
+      solicTimelineMap.set(periodKey, {
+        period: periodKey,
+        periodLabel: monthLabelFormatter.format(monthDate),
+        count: 0,
+        sortValue: year * 100 + (monthIndex + 1),
+      });
+    }
+    solicTimelineMap.get(periodKey).count += 1;
+  }
+
+  const solicitacoesTimeline = Array.from(solicTimelineMap.values())
+    .sort((a, b) => a.sortValue - b.sortValue)
+    .map(({ sortValue, ...rest }) => rest);
+
+  const periodWithMostSolic = solicitacoesTimeline.reduce(
+    (max, current) => {
+      if (!max) return current;
+      return current.count > max.count ? current : max;
+    },
+    null
+  );
+
   const timelineMap = new Map();
   for (const t of all) {
     if (!t.createdAt) continue;
@@ -273,6 +344,36 @@ async function computeOverviewData() {
     null
   );
 
+  // Agrupa atendimentos concluídos (via transcrições) por mês
+  const atendimentosTimeline = timeline.map((entry) => ({
+    ...entry,
+    type: 'concluidos',
+  }));
+
+  // Alinha períodos para comparação solicitações x atendimentos
+  const solicitacoesByPeriod = new Map(solicitacoesTimeline.map((e) => [e.period, e]));
+  const atendimentosByPeriod = new Map(atendimentosTimeline.map((e) => [e.period, e]));
+
+  const mergedPeriods = new Set([
+    ...solicitacoesTimeline.map((e) => e.period),
+    ...atendimentosTimeline.map((e) => e.period),
+  ]);
+
+  const comparativoTimeline = Array.from(mergedPeriods)
+    .map((period) => {
+      const solicit = solicitacoesByPeriod.get(period);
+      const atend = atendimentosByPeriod.get(period);
+      const sortValue = solicit?.sortValue || atend?.sortValue || 0;
+      return {
+        period,
+        periodLabel: solicit?.periodLabel || atend?.periodLabel || period,
+        solicitacoes: solicit?.count || 0,
+        atendimentosConcluidos: atend?.count || 0,
+        sortValue,
+      };
+    })
+    .sort((a, b) => a.sortValue - b.sortValue);
+
   return {
     overview: {
       totalTranscriptions,
@@ -288,6 +389,13 @@ async function computeOverviewData() {
     },
     timeline,
     periodWithMostRequests,
+    solicitacoes: {
+      total: solicitacoes.length,
+      timeline: solicitacoesTimeline,
+      peak: periodWithMostSolic,
+    },
+    comparativo: comparativoTimeline,
+    atendimentosTimeline,
   };
 }
 
@@ -316,7 +424,7 @@ async function computeOverviewData() {
   router.get('/overview/export', async (req, res) => {
     try {
       const data = await computeOverviewData();
-      const { overview, byCourse, highlights, timeline, periodWithMostRequests } = data;
+      const { overview, byCourse, highlights, timeline, periodWithMostRequests, solicitacoes } = data;
 
       const lines = [];
       lines.push('Relatório geral de atendimentos');
@@ -326,6 +434,7 @@ async function computeOverviewData() {
       lines.push(`Total de discentes atendidos: ${overview.totalStudents}`);
       lines.push(`Tamanho total (KB): ${Math.round((overview.totalSizeBytes || 0) / 1024)}`);
       lines.push(`Tamanho médio por registro (KB): ${Math.round((overview.avgSizeBytes || 0) / 1024)}`);
+      lines.push(`Solicitações registradas: ${solicitacoes?.total ?? 0}`);
 
       if (overview.sentimentsAvg) {
         lines.push('Sentimento médio geral:');
@@ -342,11 +451,19 @@ async function computeOverviewData() {
       }
 
       if (timeline.length > 0) {
+      lines.push('');
+      lines.push('Distribuição mensal de atendimentos (transcrições):');
+      timeline.forEach((entry) => {
+        lines.push(`- ${entry.periodLabel}: ${entry.count}`);
+      });
+
+      if (solicitacoes?.timeline?.length) {
         lines.push('');
-        lines.push('Distribuição mensal de atendimentos:');
-        timeline.forEach((entry) => {
+        lines.push('Distribuição mensal de solicitações:');
+        solicitacoes.timeline.forEach((entry) => {
           lines.push(`- ${entry.periodLabel}: ${entry.count}`);
         });
+      }
       }
 
       lines.push('');
@@ -400,7 +517,7 @@ async function computeOverviewData() {
   router.get('/overview/export-pdf', async (req, res) => {
     try {
       const data = await computeOverviewData();
-      const { overview, byCourse, highlights, timeline, periodWithMostRequests } = data;
+      const { overview, byCourse, highlights, timeline, periodWithMostRequests, solicitacoes } = data;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
@@ -428,6 +545,7 @@ async function computeOverviewData() {
           (overview.avgSizeBytes || 0) / 1024
         )}`
       );
+      doc.text(`Solicitações registradas: ${solicitacoes?.total ?? 0}`);
 
       if (overview.sentimentsAvg) {
         doc.moveDown(0.5);
@@ -451,10 +569,19 @@ async function computeOverviewData() {
 
       if (timeline.length > 0) {
         doc.moveDown();
-        doc.fontSize(14).text('Evolução mensal', { underline: true });
+        doc.fontSize(14).text('Evolução mensal (transcrições)', { underline: true });
         doc.moveDown(0.5);
         timeline.forEach((entry) => {
           doc.fontSize(12).text(`${entry.periodLabel}: ${entry.count} atendimentos`);
+        });
+      }
+
+      if (solicitacoes?.timeline?.length) {
+        doc.moveDown();
+        doc.fontSize(14).text('Solicitações por mês', { underline: true });
+        doc.moveDown(0.5);
+        solicitacoes.timeline.forEach((entry) => {
+          doc.fontSize(12).text(`${entry.periodLabel}: ${entry.count} solicitações`);
         });
       }
 

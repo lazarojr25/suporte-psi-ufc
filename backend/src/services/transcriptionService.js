@@ -7,6 +7,7 @@ import { GoogleGenAI } from '@google/genai';
 import {
   saveTranscriptionMetadata,
   getAllTranscriptionsMetadata,
+  deleteTranscriptionMetadata,
 } from './firestoreService.js';
 
 dotenv.config();
@@ -105,6 +106,42 @@ class TranscriptionService {
       JSON.stringify(metadata, null, 2),
       'utf-8'
     );
+  }
+
+  /**
+   * Remove transcrição (arquivo + metadados em disco) e tenta apagar metadados no Firestore.
+   */
+  async deleteTranscription(fileName) {
+    if (!fileName) {
+      return { success: false, message: 'fileName é obrigatório' };
+    }
+
+    const filePath = path.join(this.transcriptionsDir, fileName);
+    const metadataAll = this.loadMetadata();
+
+    // remove arquivo local
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      console.warn('Falha ao remover arquivo de transcrição local:', err?.message);
+    }
+
+    // remove do cache local
+    if (metadataAll[fileName]) {
+      delete metadataAll[fileName];
+      this.saveMetadata(metadataAll);
+    }
+
+    // remove no Firestore (best-effort)
+    try {
+      await deleteTranscriptionMetadata(fileName);
+    } catch (err) {
+      console.warn('Falha ao remover metadados no Firestore:', err?.message);
+    }
+
+    return { success: true };
   }
 
   /**

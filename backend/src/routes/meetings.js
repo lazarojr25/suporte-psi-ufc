@@ -77,7 +77,7 @@ router.post('/', async (req, res) => {
       studentEmail,
       scheduledDate,
       scheduledTime,
-      duration = 60,
+      duration = 45,
       notes,
       discenteId,
       curso,
@@ -180,12 +180,18 @@ router.post('/', async (req, res) => {
 router.get('/available-slots/:date', async (req, res) => {
   try {
     const { date } = req.params;
+    const slotDuration = 45; // minutos
 
-    // Horários de funcionamento (9h às 17h, de 30 em 30)
+    // Gera slots de 45 min entre 09:00 e 17:00, garantindo término antes das 17h
     const workingHours = [];
-    for (let hour = 9; hour < 17; hour++) {
-      workingHours.push(`${hour.toString().padStart(2, '0')}:00`);
-      workingHours.push(`${hour.toString().padStart(2, '0')}:30`);
+    const startMinutes = 9 * 60;
+    const endMinutes = 17 * 60;
+    for (let minutes = startMinutes; minutes <= endMinutes - slotDuration; minutes += slotDuration) {
+      const hours = Math.floor(minutes / 60)
+        .toString()
+        .padStart(2, '0');
+      const mins = (minutes % 60).toString().padStart(2, '0');
+      workingHours.push(`${hours}:${mins}`);
     }
 
     // Busca reuniões já agendadas para essa data
@@ -198,11 +204,28 @@ router.get('/available-slots/:date', async (req, res) => {
       .map((doc) => doc.data())
       .filter((m) => m.status !== 'cancelada');
 
+    // Auxiliares para evitar sobreposição
+    const toMinutes = (timeStr) => {
+      if (!timeStr) return null;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const overlaps = (candidateStart, candidateDur, existingStart, existingDur) => {
+      if (candidateStart === null || existingStart === null) return false;
+      const candidateEnd = candidateStart + candidateDur;
+      const existingEnd = existingStart + (existingDur || slotDuration);
+      return candidateStart < existingEnd && existingStart < candidateEnd;
+    };
+
     const occupiedSlots = occupiedDocs.map((m) => m.scheduledTime);
 
-    const availableSlots = workingHours.filter(
-      (slot) => !occupiedSlots.includes(slot)
-    );
+    const availableSlots = workingHours.filter((slot) => {
+      const candidateStart = toMinutes(slot);
+      return !occupiedDocs.some((m) =>
+        overlaps(candidateStart, slotDuration, toMinutes(m.scheduledTime), m.duration || slotDuration)
+      );
+    });
 
     res.json({
       success: true,

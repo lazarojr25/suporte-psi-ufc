@@ -85,7 +85,7 @@ export default function AgendarAtendimento() {
         curso: solicitacao.curso || null,
         scheduledDate: selectedDate,
         scheduledTime: selectedTime,
-        duration: 40, // 40min por padrão
+        duration: 45, // padrão de sessão: 45 minutos
         notes: observacoes
       };
 

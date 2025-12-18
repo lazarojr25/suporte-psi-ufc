@@ -86,3 +86,18 @@ export async function getAllTranscriptionsMetadata() {
     return [];
   }
 }
+
+/**
+ * Remove metadados de uma transcrição pelo fileName (docId seguro).
+ * @param {string} fileName
+ */
+export async function deleteTranscriptionMetadata(fileName) {
+  if (!fileName) return;
+  try {
+    const safeId = fileName.replace(/[\/#?]+/g, '_');
+    await db.collection(TRANSCRIPTIONS_COLLECTION).doc(safeId).delete();
+    console.log(`Metadados de transcrição removidos do Firestore: ${safeId}`);
+  } catch (error) {
+    console.error('ERRO ao remover metadados no Firestore.', error);
+  }
+}

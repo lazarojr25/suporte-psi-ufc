@@ -22,6 +22,7 @@ const router = express.Router();
 const transcriptionService = new TranscriptionService();
 const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos por etapa
 let reprocessInFlight = false;
+const reprocessLocks = new Set(); // evita reprocessamentos concorrentes por discente
 
 // Firebase Admin (para vincular meeting/solicitação quando possível)
 let db = null;
@@ -47,6 +48,48 @@ const toSafeBase = (name) =>
 
 const removeIfExists = (p) => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {} };
 const removeDir = (dir) => { try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+const readFileSafe = (p) => {
+  try {
+    return fs.readFileSync(p, 'utf-8');
+  } catch (e) {
+    return null;
+  }
+};
+
+// Critério para decidir se vale reprocessar (evita chamadas desnecessárias ao Gemini)
+const shouldReprocessEntry = (entry, force = false) => {
+  if (force) return true;
+  if (!entry) return false;
+  const hasAnalysis = !!entry.analysis;
+  const hasSummary = !!entry.analysis?.summary;
+  const hasSentiments = !!entry.analysis?.sentiments;
+  // Reprocessa apenas se faltam dados essenciais
+  return !hasAnalysis || !hasSummary || !hasSentiments;
+};
+
+// Dispara um reprocessamento assíncrono das transcrições do discente
+const triggerDiscenteReprocess = async (discenteId, { force = false } = {}) => {
+  if (!discenteId) return;
+  if (reprocessLocks.has(discenteId) || reprocessInFlight) {
+    console.log(`[reprocess] Ignorando (já em andamento) para discente ${discenteId}`);
+    return;
+  }
+  reprocessLocks.add(discenteId);
+  try {
+    const list = await transcriptionService.listTranscriptionsWithMetadata();
+    const filtered = list.filter(
+      (t) => t.metadata?.discenteId === discenteId && shouldReprocessEntry(t, force)
+    );
+    for (const item of filtered) {
+      await transcriptionService.reprocessTranscription(item.fileName);
+    }
+    console.log(`[reprocess] Finalizado para discente ${discenteId} (${filtered.length} transcrições)`);
+  } catch (err) {
+    console.error(`[reprocess] Falha ao reprocessar discente ${discenteId}:`, err?.message);
+  } finally {
+    reprocessLocks.delete(discenteId);
+  }
+};
 
 // Converte qualquer mídia para WAV mono 16 kHz PCM s16le
 const withTimeout = (command, reject) => {
@@ -122,6 +165,31 @@ const upload = multer({
 
     if (allowed.includes(ext)) cb(null, true);
     else cb(new Error(`Tipo de arquivo não suportado: ${ext}. Permitidos: ${allowed.join(', ')}`));
+  }
+});
+
+const textStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, '../../uploads');
+    ensureDir(uploadDir);
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `transcript-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const uploadText = multer({
+  storage: textStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: function (req, file, cb) {
+    const allowedExt = ['.txt', '.docx', '.doc'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mime = (file.mimetype || '').toLowerCase();
+    const mimeOk = mime === 'text/plain' || mime === 'application/msword' || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (allowedExt.includes(ext) || mimeOk) cb(null, true);
+    else cb(new Error('Tipo de arquivo não suportado. Envie .txt ou .docx/.doc de transcrição.'));
   }
 });
 
@@ -318,6 +386,13 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
+    // Dispara reprocessamento assíncrono das transcrições do discente (não bloqueia a resposta)
+    if (extraInfo.discenteId) {
+      triggerDiscenteReprocess(extraInfo.discenteId).catch((e) =>
+        console.warn('Falha ao agendar reprocessamento automático:', e?.message)
+      );
+    }
+
     return res.json({
       success: true,
       message: 'Transcrição concluída com sucesso',
@@ -405,6 +480,159 @@ router.get('/:fileName', (req, res) => {
   }
 });
 
+// POST /api/transcription/upload-text
+// Recebe um .txt já transcrito (ex.: Meet) e apenas executa análise + salvamento.
+router.post('/upload-text', uploadText.single('transcript'), async (req, res) => {
+  let uploadedPath = null;
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nenhum arquivo .txt foi enviado.',
+      });
+    }
+
+    uploadedPath = req.file.path;
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    let textContent = readFileSafe(uploadedPath);
+
+    // Para Word, apenas uma extração simples (apenas texto sem formatação)
+    if ((!textContent || !textContent.trim()) && (ext === '.docx' || ext === '.doc')) {
+      try {
+        // Lazy import para não quebrar se não estiver instalado
+        const mammoth = await import('mammoth');
+        const result = await mammoth.extractRawText({ path: uploadedPath });
+        textContent = result?.value || '';
+      } catch (convErr) {
+        console.warn('Falha ao extrair texto do Word:', convErr?.message);
+      }
+    }
+
+    if (!textContent || !textContent.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Arquivo de transcrição vazio ou ilegível.',
+      });
+    }
+
+    const {
+      discenteId,
+      solicitacaoId,
+      meetingId,
+      studentName,
+      studentEmail,
+      studentId,
+      curso,
+      sessionDate,
+    } = req.body || {};
+
+    const extraInfo = {
+      discenteId: discenteId || null,
+      solicitacaoId: solicitacaoId || null,
+      meetingId: meetingId || null,
+      studentName: studentName || null,
+      studentEmail: studentEmail || null,
+      studentId: studentId || null,
+      curso: curso || null,
+      sessionDate: sessionDate || null,
+    };
+
+    // Enriquecer metadados com meeting se possível
+    if (db && meetingId) {
+      try {
+        const snap = await db.collection('meetings').doc(meetingId).get();
+        if (snap.exists) {
+          const data = snap.data() || {};
+          extraInfo.discenteId = extraInfo.discenteId || data.discenteId || null;
+          extraInfo.solicitacaoId = extraInfo.solicitacaoId || data.solicitacaoId || null;
+          extraInfo.studentName = extraInfo.studentName || data.studentName || null;
+          extraInfo.studentEmail = extraInfo.studentEmail || data.studentEmail || null;
+          extraInfo.studentId = extraInfo.studentId || data.studentId || null;
+          extraInfo.curso = extraInfo.curso || data.curso || null;
+          extraInfo.sessionDate =
+            extraInfo.sessionDate ||
+            data.scheduledDate ||
+            (data.dateTime ? new Date(data.dateTime).toISOString().slice(0, 10) : null);
+        }
+      } catch (e) {
+        console.warn('Não foi possível enriquecer metadados a partir do meeting (upload-text):', e?.message);
+      }
+    }
+
+    const baseName = path.basename(req.file.originalname, path.extname(req.file.originalname));
+    const finalBaseName = buildTranscriptBaseName(extraInfo, toSafeBase(baseName));
+    const finalFileName = `${finalBaseName}.txt`;
+
+    const result = await transcriptionService.saveFinalTranscription(
+      finalFileName,
+      textContent,
+      extraInfo
+    );
+
+    if (!result.success) {
+      throw new Error(result.error || 'Falha ao processar transcrição.');
+    }
+
+    // Atualiza meeting se aplicável
+    if (db && meetingId) {
+      try {
+        const meetingRef = db.collection('meetings').doc(meetingId);
+        const updatePayload = {
+          status: 'concluida',
+          updatedAt: new Date().toISOString(),
+          transcriptionFileName: finalFileName,
+        };
+        if (extraInfo.discenteId) updatePayload.discenteId = extraInfo.discenteId;
+        if (extraInfo.studentEmail) updatePayload.studentEmail = extraInfo.studentEmail;
+        if (extraInfo.studentName) updatePayload.studentName = extraInfo.studentName;
+        if (extraInfo.curso) updatePayload.curso = extraInfo.curso;
+        if (extraInfo.solicitacaoId) updatePayload.solicitacaoId = extraInfo.solicitacaoId;
+        await meetingRef.update(updatePayload);
+      } catch (e) {
+        console.warn('Não foi possível atualizar meeting após upload-text:', e?.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Transcrição pronta processada com sucesso',
+      data: {
+        fileName: finalFileName,
+        analysis: result.analysis,
+        metadata: result.metadata,
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao processar transcrição pronta:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao processar transcrição pronta',
+      error: error.message,
+    });
+  } finally {
+    if (uploadedPath) removeIfExists(uploadedPath);
+  }
+});
+
+// DELETE /api/transcription/:fileName - remove arquivo e metadados
+router.delete('/:fileName', async (req, res) => {
+  try {
+    const { fileName } = req.params;
+    const result = await transcriptionService.deleteTranscription(fileName);
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+    res.json({ success: true, message: 'Transcrição removida com sucesso' });
+  } catch (error) {
+    console.error('Erro ao remover transcrição:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao remover transcrição',
+      error: error.message,
+    });
+  }
+});
+
 // POST /api/transcription/analyze
 router.post('/analyze', async (req, res) => {
   try {
@@ -433,11 +661,11 @@ router.post('/reprocess-all', async (req, res) => {
       });
     }
     reprocessInFlight = true;
-    const { discenteId } = req.body || {};
+    const { discenteId, force = false } = req.body || {};
     const list = await transcriptionService.listTranscriptionsWithMetadata();
     const filtered = discenteId
-      ? list.filter((t) => t.metadata?.discenteId === discenteId)
-      : list;
+      ? list.filter((t) => t.metadata?.discenteId === discenteId && shouldReprocessEntry(t, force))
+      : list.filter((t) => shouldReprocessEntry(t, force));
 
     const results = [];
     for (const item of filtered) {
