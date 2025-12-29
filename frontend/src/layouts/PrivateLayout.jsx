@@ -10,6 +10,12 @@ export default function PrivateLayout() {
   const [authLoading, setAuthLoading] = useState(true);
   const [role, setRole] = useState(null);
   const location = useLocation();
+  const normalizeRole = (value) => {
+    const r = (value || '').toLowerCase();
+    if (r === 'admin') return 'admin';
+    if (r === 'staff' || r === 'servidor') return 'servidor';
+    return 'servidor';
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
@@ -35,18 +41,18 @@ export default function PrivateLayout() {
           console.log('nao achou user');
           await setDoc(ref, {
             email: user.email || '',
-            role: 'staff',
+            role: 'servidor',
             createdAt: new Date().toISOString(),
           });
-          setRole('staff');
+          setRole('servidor');
         } else {
           console.log('achou usar');
           const data = snap.data();
-          setRole(data.role || 'staff');
+          setRole(normalizeRole(data.role));
         }
       } catch (err) {
         console.warn('Falha ao carregar role do usuário:', err);
-        setRole('staff');
+        setRole('servidor');
       }
     };
 

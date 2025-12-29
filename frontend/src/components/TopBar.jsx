@@ -104,43 +104,61 @@ export default function TopBar({ user, role }) {
         </div>
 
         {/* navegação mobile */}
-        <nav className="sm:hidden pb-3 flex gap-2">
-          <NavLink
-            to="/agenda"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkInactive}`
-            }
-          >
-            Agenda
-          </NavLink>
-          <NavLink
-            to="/gerenciar-solicitacoes"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkInactive}`
-            }
-          >
-            Solicitações
-          </NavLink>
-          {role === 'admin' && (
+        <nav className="sm:hidden pb-3 -mx-1 px-1 overflow-x-auto">
+          <div className="flex gap-2 flex-nowrap min-w-max">
             <NavLink
-              to="/relatorios"
+              to="/agenda"
               className={({ isActive }) =>
                 `${linkBase} ${isActive ? linkActive : linkInactive}`
               }
             >
-              Relatórios
+              Agenda
             </NavLink>
-          )}
-          {role === 'admin' && (
             <NavLink
-              to="/usuarios"
+              to="/gerenciar-solicitacoes"
               className={({ isActive }) =>
                 `${linkBase} ${isActive ? linkActive : linkInactive}`
               }
             >
-              Usuários
+              Solicitações
             </NavLink>
-          )}
+            <NavLink
+              to="/discentes"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkInactive}`
+              }
+            >
+              Discentes
+            </NavLink>
+            {role === 'admin' && (
+              <NavLink
+                to="/relatorios"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
+                Relatórios
+              </NavLink>
+            )}
+            {role === 'admin' && (
+              <NavLink
+                to="/usuarios"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
+                Usuários
+              </NavLink>
+            )}
+            <NavLink
+              to="/configuracoes"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkInactive}`
+              }
+            >
+              Configurações
+            </NavLink>
+          </div>
         </nav>
       </div>
     </header>

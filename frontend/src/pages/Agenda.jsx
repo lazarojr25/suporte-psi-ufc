@@ -12,6 +12,25 @@ const parseDate = (value) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+const normalizeSolicitacaoStatus = (status) =>
+  (status || '').toString().trim().toLowerCase();
+
+const isSolicitacaoAgendada = (status) => {
+  const normalized = normalizeSolicitacaoStatus(status);
+  return normalized.includes('agend');
+};
+
+const isSolicitacaoPendente = (status) => {
+  const normalized = normalizeSolicitacaoStatus(status);
+  if (!normalized) return true;
+  return normalized.includes('pend') || normalized === 'nova';
+};
+
+const shouldShowSolicitacaoInAgenda = (status) => {
+  if (isSolicitacaoAgendada(status)) return false;
+  return isSolicitacaoPendente(status);
+};
+
 export default function Agenda() {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -86,12 +105,18 @@ export default function Agenda() {
 
   const eventsByDay = useMemo(() => {
     const map = {};
+    const ensureDay = (key) => {
+      if (!map[key]) {
+        map[key] = { meetings: [], solicitacoesPendentes: [] };
+      }
+      return map[key];
+    };
 
     meetings.forEach((m) => {
       const key = m.scheduledDate || (m.dateTime && dateKey(new Date(m.dateTime)));
       if (!key) return;
-      if (!map[key]) map[key] = [];
-      map[key].push({
+      const day = ensureDay(key);
+      day.meetings.push({
         type: 'meeting',
         id: m.id,
         title: m.studentName || 'Sessão',
@@ -110,8 +135,9 @@ export default function Agenda() {
     solicitacoes.forEach((s) => {
       const key = s.createdAt ? dateKey(s.createdAt) : null;
       if (!key) return;
-      if (!map[key]) map[key] = [];
-      map[key].push({
+      if (!shouldShowSolicitacaoInAgenda(s.status)) return;
+      const day = ensureDay(key);
+      day.solicitacoesPendentes.push({
         type: 'solicitacao',
         id: s.id,
         title: s.motivation || 'Solicitação',
@@ -126,12 +152,20 @@ export default function Agenda() {
     return map;
   }, [meetings, solicitacoes]);
 
-  const selectedEvents = eventsByDay[selectedDate] || [];
+  const emptyDayEvents = { meetings: [], solicitacoesPendentes: [] };
+  const selectedDayEvents = eventsByDay[selectedDate] || emptyDayEvents;
+  const selectedEvents = [
+    ...selectedDayEvents.meetings,
+    ...selectedDayEvents.solicitacoesPendentes,
+  ];
 
   const statusOptions = useMemo(() => {
     const set = new Set();
     meetings.forEach((m) => m.status && set.add(m.status));
-    solicitacoes.forEach((s) => s.status && set.add(s.status));
+    solicitacoes.forEach((s) => {
+      if (!shouldShowSolicitacaoInAgenda(s.status)) return;
+      if (s.status) set.add(s.status);
+    });
     return ['all', ...Array.from(set)];
   }, [meetings, solicitacoes]);
 
@@ -219,7 +253,10 @@ export default function Agenda() {
               const key = dateKey(day);
               const inMonth = day.getMonth() === currentMonth.getMonth();
               const isToday = key === dateKey(new Date());
-              const hasEvents = (eventsByDay[key] || []).length > 0;
+              const dayEvents = eventsByDay[key] || emptyDayEvents;
+              const pendingCount = dayEvents.solicitacoesPendentes.length;
+              const meetingsCount = dayEvents.meetings.length;
+              const hasEvents = pendingCount + meetingsCount > 0;
               return (
                 <button
                   type="button"
@@ -227,7 +264,9 @@ export default function Agenda() {
                   onClick={() => setSelectedDate(key)}
                   className={`h-24 rounded-lg border flex flex-col items-start p-2 text-left transition ${
                     inMonth ? 'bg-white' : 'bg-gray-50'
-                  } ${selectedDate === key ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'}`}
+                  } ${isToday ? 'border-blue-300 bg-blue-50' : ''} ${
+                    selectedDate === key ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'
+                  }`}
                 >
                   <span
                     className={`text-sm font-semibold ${
@@ -237,10 +276,17 @@ export default function Agenda() {
                     {day.getDate()}
                   </span>
                   {hasEvents && (
-                    <div className="mt-2 w-full">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold">
-                        {(eventsByDay[key] || []).length} eventos
-                      </span>
+                    <div className="mt-2 w-full flex flex-col gap-1">
+                      {pendingCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-semibold">
+                          {pendingCount} solicitação{pendingCount > 1 ? 's' : ''} pendente{pendingCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {meetingsCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-800 text-[11px] font-semibold">
+                          {meetingsCount} encontro{meetingsCount > 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
                   )}
                 </button>
@@ -250,21 +296,25 @@ export default function Agenda() {
         </div>
 
         <div className="bg-white rounded-xl shadow p-4 space-y-3">
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs uppercase text-gray-500">Dia selecionado</p>
               <p className="text-lg font-semibold text-gray-900">
                 {selectedDate.split('-').reverse().join('/')}
               </p>
               <p className="text-xs text-gray-500">
-                {(eventsByDay[selectedDate] || []).length} eventos
+                {selectedDayEvents.solicitacoesPendentes.length} solicitação
+                {selectedDayEvents.solicitacoesPendentes.length === 1 ? '' : 's'} pendente
+                {selectedDayEvents.solicitacoesPendentes.length === 1 ? '' : 's'} •{' '}
+                {selectedDayEvents.meetings.length} encontro
+                {selectedDayEvents.meetings.length === 1 ? '' : 's'}
               </p>
             </div>
-            <div className="flex flex-col gap-2 text-xs w-full sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+            <div className="flex flex-col gap-2 text-xs w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="border rounded-md px-2 py-1 text-xs"
+                className="border rounded-md px-2 py-1 text-xs w-full sm:w-auto"
               >
                 <option value="all">Todos os tipos</option>
                 <option value="meeting">Sessões</option>
@@ -273,7 +323,7 @@ export default function Agenda() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="border rounded-md px-2 py-1 text-xs"
+                className="border rounded-md px-2 py-1 text-xs w-full sm:w-auto"
               >
                 {statusOptions.map((status) => (
                   <option key={status} value={status}>

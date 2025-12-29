@@ -19,6 +19,14 @@ try {
 const auth = appInitialized ? getAuth() : null;
 const db = appInitialized ? getFirestore() : null;
 
+const normalizeRole = (role) => {
+  const r = (role || '').toLowerCase();
+  if (r === 'inactive') return 'inactive';
+  if (r === 'admin') return 'admin';
+  if (r === 'staff' || r === 'servidor') return 'servidor';
+  return role || null;
+};
+
 async function resolveUserRole(uid) {
   if (!uid || !db) return null;
   try {
@@ -26,7 +34,7 @@ async function resolveUserRole(uid) {
     if (!snap.exists) return null;
     const data = snap.data() || {};
     if (data.active === false) return 'inactive';
-    return data.role || null;
+    return normalizeRole(data.role);
   } catch (err) {
     console.warn('Não foi possível ler role do Firestore:', err?.message);
     return null;
@@ -58,14 +66,14 @@ export function verifyAuth(requireAdmin = false) {
 
     try {
       const decoded = await auth.verifyIdToken(tokenStr);
-      const claimsRole = decoded.role || decoded.customClaims?.role || null;
-      const roleFromDb = await resolveUserRole(decoded.uid);
+      const claimsRole = normalizeRole(decoded.role || decoded.customClaims?.role || null);
+      const roleFromDb = normalizeRole(await resolveUserRole(decoded.uid));
 
       if (roleFromDb === 'inactive') {
         return res.status(403).json({ success: false, message: 'Usuário inativo.' });
       }
 
-      const role = roleFromDb || claimsRole || 'staff';
+      const role = roleFromDb || claimsRole || 'servidor';
       req.user = { uid: decoded.uid, email: decoded.email || null, role };
 
       if (requireAdmin && role !== 'admin') {

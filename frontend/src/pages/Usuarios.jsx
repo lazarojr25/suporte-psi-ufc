@@ -2,7 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { collection, getDocs, orderBy, query, doc, setDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 
-const ROLES = ['staff', 'admin'];
+const ROLE_OPTIONS = [
+  { value: 'servidor', label: 'servidor' },
+  { value: 'admin', label: 'admin' },
+];
+
+const normalizeRole = (role) => {
+  const r = (role || '').toLowerCase();
+  if (r === 'staff') return 'servidor';
+  if (r === 'admin') return 'admin';
+  if (r === 'servidor') return 'servidor';
+  return 'servidor';
+};
+
+const roleLabel = (role) =>
+  ROLE_OPTIONS.find((r) => r.value === normalizeRole(role))?.label || normalizeRole(role);
 
 export default function Usuarios() {
   const [usuarios, setUsuarios] = useState([]);
@@ -72,7 +86,7 @@ export default function Usuarios() {
           <p className="text-xs uppercase text-gray-500">Administração</p>
           <h1 className="text-2xl font-bold text-gray-900">Usuários</h1>
           <p className="text-sm text-gray-600">
-            Defina papéis (admin/staff) para controlar acesso.
+            Defina papéis (admin/servidor) para controlar acesso.
           </p>
         </div>
       </div>
@@ -99,7 +113,7 @@ export default function Usuarios() {
               {usuarios.map((u) => (
                 <tr key={u.id} className="border-b last:border-b-0">
                   <td className="px-4 py-2">{u.email || u.id}</td>
-                  <td className="px-4 py-2 capitalize">{u.role || 'staff'}</td>
+                  <td className="px-4 py-2 capitalize">{roleLabel(u.role)}</td>
                   <td className="px-4 py-2">
                     {u.active === false ? (
                       <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-100">
@@ -110,17 +124,17 @@ export default function Usuarios() {
                         Ativo
                       </span>
                     )}
-                  </td>
+                    </td>
                   <td className="px-4 py-2 space-x-2">
                     <select
-                      value={u.role || 'staff'}
+                      value={normalizeRole(u.role)}
                       onChange={(e) => handleRoleChange(u.id, e.target.value)}
                       disabled={savingId === u.id}
                       className="border rounded-lg px-3 py-1 text-sm"
                     >
-                      {ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
+                      {ROLE_OPTIONS.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
                         </option>
                       ))}
                     </select>

@@ -28,9 +28,10 @@ router.post('/', async (req, res) => {
       return res.status(500).json({ success: false, message: 'Firebase Admin não inicializado.' });
     }
 
-    const { email, password, role = 'staff' } = req.body || {};
+    const { email, password, role = 'servidor' } = req.body || {};
     const normalizedEmail = (email || '').trim().toLowerCase();
-    const normalizedRole = role === 'admin' ? 'admin' : 'staff';
+    const normalizedRole =
+      (role || '').toLowerCase() === 'admin' ? 'admin' : 'servidor';
 
     if (!normalizedEmail || !password) {
       return res.status(400).json({ success: false, message: 'E-mail e senha são obrigatórios.' });
@@ -62,7 +63,7 @@ router.post('/', async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Usuário criado com sucesso.',
-      data: { uid: userRecord.uid, email: userRecord.email, role },
+      data: { uid: userRecord.uid, email: userRecord.email, role: normalizedRole },
     });
   } catch (error) {
     console.error('Erro ao criar usuário pelo Admin SDK:', error);

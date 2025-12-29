@@ -7,6 +7,7 @@ import ufcLogo from '../assets/ufc-logo.png';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -135,13 +136,22 @@ export default function Login() {
 
               <label className="block mb-4">
                 <span className="text-sm font-medium text-gray-700">Senha</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring"
-                  required
-                />
+                <div className="mt-1 relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="block w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring pr-24"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-2 px-3 text-sm font-semibold text-blue-600 hover:text-blue-700 focus:outline-none"
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
               </label>
 
               <button

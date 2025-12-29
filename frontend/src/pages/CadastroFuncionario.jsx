@@ -26,7 +26,7 @@ export default function CadastroFuncionario() {
       try {
         await setDoc(doc(db, 'users', cred.user.uid), {
           email: cred.user.email || '',
-          role: 'staff',
+          role: 'servidor',
           createdAt: new Date().toISOString(),
         });
       } catch (e) {
