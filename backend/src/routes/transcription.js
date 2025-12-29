@@ -140,6 +140,174 @@ const segmentWav = (wavPath, outDir) =>
     withTimeout(command, reject);
   });
 
+const updateMeetingSafe = async (meetingId, payload) => {
+  if (!db || !meetingId) return;
+  try {
+    const meetingRef = db.collection('meetings').doc(meetingId);
+    await meetingRef.update(payload);
+  } catch (e) {
+    console.warn('Não foi possível atualizar meeting:', e?.message);
+  }
+};
+
+async function processMediaJob({ filePath, fileName, extraInfo, jobId }) {
+  let workDir = null;
+  let segDir = null;
+  const originalPath = filePath;
+  const baseName = path.basename(fileName, path.extname(fileName));
+
+  try {
+    workDir = path.join(__dirname, '../../work', baseName);
+    segDir = path.join(workDir, 'segments');
+    ensureDir(workDir);
+    console.log(`[transcription-job ${jobId}] Iniciando processamento de ${fileName}`);
+
+    // Marca meeting como em processamento (não bloqueante)
+    updateMeetingSafe(extraInfo.meetingId, {
+      status: 'em_processamento',
+      updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+
+    const wavPath = await convertToWav16kMono(originalPath, workDir, baseName);
+
+    const wavStats = fs.statSync(wavPath);
+    const wavSizeMB = wavStats.size / (1024 * 1024);
+    const SEGMENT_THRESHOLD_MB = 20;
+
+    let mergedText;
+    let analysis = null;
+    let finalMetadata = null;
+    let finalFile;
+    let partResults = [];
+
+    const finalBaseName = buildTranscriptBaseName(extraInfo, toSafeBase(baseName));
+    const finalFileName = `${finalBaseName}.txt`;
+
+    if (wavSizeMB <= SEGMENT_THRESHOLD_MB) {
+      console.log(
+        `[transcription-job ${jobId}] Arquivo com ${wavSizeMB.toFixed(
+          2
+        )}MB, transcrevendo sem segmentação...`
+      );
+
+      const result = await transcriptionService.transcribeAudio(
+        wavPath,
+        finalFileName,
+        extraInfo
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Falha na transcrição do áudio.');
+      }
+
+      mergedText = result.transcription;
+      analysis = result.analysis;
+      finalMetadata = result.metadata;
+      finalFile = result.fileName;
+      partResults = [];
+    } else {
+      console.log(
+        `[transcription-job ${jobId}] Arquivo com ${wavSizeMB.toFixed(
+          2
+        )}MB, segmentando em partes para transcrição...`
+      );
+
+      const parts = await segmentWav(wavPath, segDir);
+      if (!parts.length) {
+        throw new Error('Falha ao segmentar áudio (nenhuma parte gerada).');
+      }
+
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
+        const r = await transcriptionService.transcribeAudio(p, null, extraInfo);
+
+        if (!r.success) {
+          console.error('Erro na transcrição de parte:', p, r.error);
+          throw new Error(`Erro na transcrição de uma das partes: ${p}`);
+        }
+        partResults.push(r);
+      }
+
+      mergedText = partResults.map((r) => r.transcription || '').join('\n\n');
+
+      const result = await transcriptionService.saveFinalTranscription(
+        finalFileName,
+        mergedText,
+        extraInfo
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao salvar a transcrição final.');
+      }
+
+      mergedText = result.transcription;
+      analysis = result.analysis;
+      finalMetadata = result.metadata;
+      finalFile = result.fileName;
+    }
+
+    if (db && extraInfo.meetingId) {
+      await updateMeetingSafe(extraInfo.meetingId, {
+        status: 'concluida',
+        updatedAt: new Date().toISOString(),
+        transcriptionFileName: finalFile,
+        ...(extraInfo.discenteId ? { discenteId: extraInfo.discenteId } : {}),
+        ...(extraInfo.studentEmail ? { studentEmail: extraInfo.studentEmail } : {}),
+        ...(extraInfo.studentName ? { studentName: extraInfo.studentName } : {}),
+        ...(extraInfo.curso ? { curso: extraInfo.curso } : {}),
+        ...(extraInfo.solicitacaoId ? { solicitacaoId: extraInfo.solicitacaoId } : {}),
+      });
+    }
+
+    if (extraInfo.discenteId) {
+      triggerDiscenteReprocess(extraInfo.discenteId).catch((e) =>
+        console.warn('Falha ao agendar reprocessamento automático:', e?.message)
+      );
+    }
+
+    console.log(`[transcription-job ${jobId}] Concluído com sucesso (${finalFile})`);
+    return {
+      success: true,
+      data: {
+        fileName: finalFile,
+        transcription: mergedText,
+        parts: partResults.map((r, idx) => ({
+          index: idx + 1,
+          fileName: r.fileName,
+          metadata: r.metadata || null,
+        })),
+        analysis: analysis || null,
+        metadata: finalMetadata || null,
+      },
+    };
+  } catch (error) {
+    console.error(`[transcription-job ${jobId}] Erro no processamento:`, error);
+    if (extraInfo.meetingId) {
+      updateMeetingSafe(extraInfo.meetingId, {
+        status: 'erro_transcricao',
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
+    return { success: false, message: error?.message || 'Erro no processamento de mídia' };
+  } finally {
+    if (originalPath) removeIfExists(originalPath);
+    if (workDir) removeDir(workDir);
+    if (segDir) removeDir(segDir);
+  }
+}
+
+const startAsyncTranscriptionJob = (params) => {
+  const jobId =
+    params.jobId ||
+    `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  setImmediate(() => {
+    processMediaJob({ ...params, jobId }).catch((err) =>
+      console.error(`[transcription-job ${jobId}] Falha geral:`, err)
+    );
+  });
+  return jobId;
+};
+
 // ---------------- multer (upload) ----------------
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -198,9 +366,6 @@ const uploadText = multer({
 // POST /api/transcription/upload
 // O campo FormData continua "audio" para manter compatibilidade com o frontend
 router.post('/upload', upload.single('audio'), async (req, res) => {
-  let originalPath = null;
-  let workDir = null;
-  let segDir = null;
   try {
     if (!req.file) {
       return res
@@ -252,173 +417,27 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
-    originalPath = req.file.path;
-    const baseName = path.basename(
-      req.file.filename,
-      path.extname(req.file.filename)
-    );
-    console.log(`Arquivo recebido: ${req.file.filename}`);
-
-    // 1) Converte para WAV 16k mono
-    workDir = path.join(__dirname, '../../work', baseName);
-    segDir = path.join(workDir, 'segments');
-    ensureDir(workDir);
-
-    const wavPath = await convertToWav16kMono(originalPath, workDir, baseName);
-
-    // Verifica tamanho do WAV para decidir se segmenta ou não
-    const wavStats = fs.statSync(wavPath);
-    const wavSizeMB = wavStats.size / (1024 * 1024);
-    const SEGMENT_THRESHOLD_MB = 20; // se > 20MB, segmenta
-
-    let mergedText;
-    let analysis = null;
-    let finalMetadata = null;
-    let finalFile;
-    let partResults = [];
-
-    const finalBaseName = buildTranscriptBaseName(
+    const jobId = startAsyncTranscriptionJob({
+      filePath: req.file.path,
+      fileName: req.file.filename,
       extraInfo,
-      toSafeBase(baseName)
-    );
-    const finalFileName = `${finalBaseName}.txt`;
+    });
 
-    if (wavSizeMB <= SEGMENT_THRESHOLD_MB) {
-      // Caso normal: arquivo pequeno → transcreve direto, sem segmentação
-      console.log(
-        `Arquivo com ${wavSizeMB.toFixed(
-          2
-        )}MB, transcrevendo sem segmentação...`
-      );
+    console.log(`[transcription-job ${jobId}] Arquivo recebido: ${req.file.filename}`);
 
-      const result = await transcriptionService.transcribeAudio(
-        wavPath,
-        finalFileName,
-        extraInfo
-      );
-
-      if (!result.success) {
-        throw new Error(result.error || 'Falha na transcrição do áudio.');
-      }
-
-      mergedText = result.transcription;
-      analysis = result.analysis;
-      finalMetadata = result.metadata;
-      finalFile = result.fileName;
-
-      partResults = []; // sem partes
-    } else {
-      // Caso grande: segmenta e depois gera apenas um arquivo final
-      console.log(
-        `Arquivo com ${wavSizeMB.toFixed(
-          2
-        )}MB, segmentando em partes para transcrição...`
-      );
-
-      const parts = await segmentWav(wavPath, segDir);
-      if (!parts.length) {
-        throw new Error(
-          'Falha ao segmentar áudio (nenhuma parte gerada).'
-        );
-      }
-
-      // 3) Transcreve cada parte e armazena o texto
-      for (let i = 0; i < parts.length; i++) {
-        const p = parts[i];
-        // Não salva no disco, apenas retorna a transcrição
-        const r = await transcriptionService.transcribeAudio(
-          p,
-          null, // Não salva no disco
-          extraInfo
-        );
-
-        if (!r.success) {
-          console.error('Erro na transcrição de parte:', p, r.error);
-          throw new Error(`Erro na transcrição de uma das partes: ${p}`);
-        }
-        partResults.push(r);
-      }
-
-      // 4) Junta as transcrições (na ordem) em um texto único
-      mergedText = partResults
-        .map((r) => r.transcription || '')
-        .join('\n\n');
-
-      // 5) Salva o arquivo final e metadados
-      const result = await transcriptionService.saveFinalTranscription(
-        finalFileName,
-        mergedText,
-        extraInfo
-      );
-
-      if (!result.success) {
-        throw new Error(result.error || 'Falha ao salvar a transcrição final.');
-      }
-
-      mergedText = result.transcription;
-      analysis = result.analysis;
-      finalMetadata = result.metadata;
-      finalFile = result.fileName;
-
-      // (opcional) Limpeza de temporários: partes WAV / txt, etc.
-      // fs.rmSync(workDir, { recursive: true, force: true });
-    }
-
-    if (db && meetingId) {
-      try {
-        const meetingRef = db.collection('meetings').doc(meetingId);
-        const updatePayload = {
-          status: 'concluida',
-          updatedAt: new Date().toISOString(),
-          transcriptionFileName: finalFile,
-        };
-
-        // garante vínculo se ainda não existir
-        if (extraInfo.discenteId) updatePayload.discenteId = extraInfo.discenteId;
-        if (extraInfo.studentEmail) updatePayload.studentEmail = extraInfo.studentEmail;
-        if (extraInfo.studentName) updatePayload.studentName = extraInfo.studentName;
-        if (extraInfo.curso) updatePayload.curso = extraInfo.curso;
-        if (extraInfo.solicitacaoId) updatePayload.solicitacaoId = extraInfo.solicitacaoId;
-
-        await meetingRef.update(updatePayload);
-      } catch (e) {
-        console.warn('Não foi possível atualizar status do meeting após transcrição:', e?.message);
-      }
-    }
-
-    // Dispara reprocessamento assíncrono das transcrições do discente (não bloqueia a resposta)
-    if (extraInfo.discenteId) {
-      triggerDiscenteReprocess(extraInfo.discenteId).catch((e) =>
-        console.warn('Falha ao agendar reprocessamento automático:', e?.message)
-      );
-    }
-
-    return res.json({
+    return res.status(202).json({
       success: true,
-      message: 'Transcrição concluída com sucesso',
-      data: {
-        fileName: finalFile,
-        transcription: mergedText,
-        parts: partResults.map((r, idx) => ({
-          index: idx + 1,
-          fileName: r.fileName,
-          metadata: r.metadata || null,
-        })),
-        analysis: analysis || null,
-        metadata: finalMetadata || null,
-      },
+      processing: true,
+      jobId,
+      message: 'Arquivo recebido; processamento em segundo plano. Você pode continuar usando o sistema enquanto finalizamos.',
     });
   } catch (error) {
-    console.error('Erro no upload/transcrição:', error);
+    console.error('Erro ao agendar processamento de mídia:', error);
     return res.status(500).json({
       success: false,
       message: 'Erro no processamento de mídia',
       error: error.message,
     });
-  } finally {
-    if (originalPath) removeIfExists(originalPath);
-    if (workDir) removeDir(workDir);
-    if (segDir) removeDir(segDir);
   }
 });
 

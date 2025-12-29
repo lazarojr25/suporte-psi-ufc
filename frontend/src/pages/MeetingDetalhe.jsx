@@ -164,14 +164,11 @@ export default function MeetingDetalhe() {
         sessionDate,
       });
 
-      try {
-        await apiService.updateMeeting(meetingId, { status: 'concluida' });
-      } catch (e) {
-        console.warn('Falha ao atualizar status após upload:', e);
-      }
-
-      setUploadMsg('Transcrição enviada e sessão marcada como concluída.');
+      setUploadMsg('Arquivo enviado. Processamento em segundo plano; você pode continuar usando o sistema.');
       setSelectedFile(null);
+      setMeeting((prev) =>
+        prev ? { ...prev, status: 'em_processamento' } : prev
+      );
       const updated = await apiService.getMeeting(meetingId);
       if (updated?.success && updated.data) {
         setMeeting(updated.data?.data || updated.data);
@@ -244,6 +241,9 @@ export default function MeetingDetalhe() {
     switch (meeting.status) {
       case 'concluida':
         return <span className={`${base} bg-green-100 text-green-800`}>Concluída</span>;
+      case 'em_processamento':
+      case 'processando':
+        return <span className={`${base} bg-amber-100 text-amber-800`}>Processando</span>;
       case 'agendada':
         return <span className={`${base} bg-blue-100 text-blue-800`}>Agendada</span>;
       case 'cancelada':

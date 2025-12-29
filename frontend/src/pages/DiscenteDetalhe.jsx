@@ -151,6 +151,7 @@ export default function DiscenteDetalhe() {
     const dateB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
     return dateB - dateA;
   });
+  const hasTranscricoes = orderedTranscricoes.length > 0;
   const lastTranscription = orderedTranscricoes[0] || null;
   const sentimentTimeline = orderedTranscricoes
     .filter((t) => t.analysis?.sentiments)
@@ -426,6 +427,9 @@ export default function DiscenteDetalhe() {
     } else if (m._statusNormalized === 'concluida') {
       label = 'Concluída';
       className = 'bg-green-100 text-green-800 border border-green-200';
+    } else if (m._statusNormalized.includes('process')) {
+      label = 'Processando';
+      className = 'bg-amber-100 text-amber-800 border border-amber-200';
     } else if (m._statusNormalized === 'agendada') {
       if (m._isPast) {
         label = 'Agendada (data já passou)';
@@ -585,7 +589,7 @@ export default function DiscenteDetalhe() {
               <button
                 type="button"
                 onClick={handleReprocessDiscente}
-                disabled={reprocessing}
+                disabled={reprocessing || !hasTranscricoes}
                 className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
               >
                 {reprocessing ? 'Reprocessando...' : 'Reprocessar transcrições'}
@@ -719,7 +723,7 @@ export default function DiscenteDetalhe() {
             <button
               type="button"
               onClick={handleDownloadDiscenteReport}
-              disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf}
+              disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf || !hasTranscricoes}
               className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
             >
               {downloadingDiscenteReport ? 'Gerando...' : 'Baixar TXT'}
@@ -727,7 +731,7 @@ export default function DiscenteDetalhe() {
             <button
               type="button"
               onClick={handleDownloadDiscenteReportPdf}
-              disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf}
+              disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf || !hasTranscricoes}
               className="px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
             >
               {downloadingDiscenteReportPdf ? 'Gerando PDF...' : 'Baixar PDF'}
