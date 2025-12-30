@@ -15,6 +15,15 @@ export default function Relatorios() {
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const hasData =
+    !!overview &&
+    (
+      (overview.totalTranscriptions || 0) > 0 ||
+      (overview.totalStudents || 0) > 0 ||
+      (solicitacoes.total || 0) > 0 ||
+      (timeline?.length || 0) > 0 ||
+      (byCourse?.length || 0) > 0
+    );
 
   const maxTimeline = Math.max(
     1,
@@ -113,14 +122,14 @@ export default function Relatorios() {
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <button
             onClick={handleDownloadOverview}
-            disabled={loading || downloading}
+            disabled={loading || downloading || !hasData}
             className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-60"
           >
             {downloading ? 'Gerando...' : 'Baixar análise (TXT)'}
           </button>
           <button
             onClick={handleDownloadOverviewPdf}
-            disabled={loading || downloadingPdf}
+            disabled={loading || downloadingPdf || !hasData}
             className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
           >
             {downloadingPdf ? 'Gerando...' : 'Baixar PDF'}

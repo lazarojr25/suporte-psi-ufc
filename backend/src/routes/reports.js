@@ -952,8 +952,12 @@ async function computeOverviewData() {
       const filtered = all.filter((t) => t.metadata?.discenteId === discenteId);
 
       const totalTranscriptions = filtered.length;
-      const totalSizeBytes = filtered.reduce((sum, t) => sum + (t.size || 0), 0);
       const historyPatterns = buildDiscentePatterns(filtered);
+      const discenteName =
+        filtered.find((t) => normalizeString(t.metadata?.studentName))?.metadata?.studentName ||
+        filtered.find((t) => normalizeString(t.metadata?.name))?.metadata?.name ||
+        filtered.find((t) => normalizeString(t.metadata?.studentId))?.metadata?.studentId ||
+        discenteId;
 
       let sentimentsAvg = null;
       if (totalTranscriptions > 0) {
@@ -984,11 +988,10 @@ async function computeOverviewData() {
       };
 
       const lines = [];
-      lines.push(`Relatório do discente ${discenteId}`);
+      lines.push(`Relatório do discente ${discenteName}`);
       lines.push(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
       lines.push('----------------------------------------');
       lines.push(`Total de transcrições: ${totalTranscriptions}`);
-      lines.push(`Tamanho total (KB): ${Math.round(totalSizeBytes / 1024)}`);
 
       if (sentimentsAvg) {
         lines.push(
@@ -1017,7 +1020,7 @@ async function computeOverviewData() {
           lines.push(`- Padrões emocionais: ${historyPatterns.emotionalPatterns.join(', ')}`);
         }
         if (historyPatterns.commonTriggers?.length) {
-          lines.push(`- Gatilhos comuns: ${historyPatterns.commonTriggers.join(', ')}`);
+          lines.push(`- Sugestão de ações: ${historyPatterns.commonTriggers.join(', ')}`);
         }
       }
 
@@ -1040,14 +1043,17 @@ async function computeOverviewData() {
             if (t.analysis?.summary) {
               lines.push(`  resumo: ${t.analysis.summary}`);
             }
-            if (Array.isArray(t.analysis?.actionableInsights) && t.analysis.actionableInsights.length > 0) {
-              lines.push(`  sugestões: ${t.analysis.actionableInsights.join(' | ')}`);
-            }
           });
       }
 
       const content = lines.join('\n');
-      const fileName = `relatorio-discente-${discenteId}.txt`;
+      const safeName = discenteName
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const fileName = `relatorio-discente-${safeName || discenteId}.txt`;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       res.send(content);
@@ -1069,8 +1075,12 @@ async function computeOverviewData() {
       const filtered = all.filter((t) => t.metadata?.discenteId === discenteId);
 
       const totalTranscriptions = filtered.length;
-      const totalSizeBytes = filtered.reduce((sum, t) => sum + (t.size || 0), 0);
       const historyPatterns = buildDiscentePatterns(filtered);
+      const discenteName =
+        filtered.find((t) => normalizeString(t.metadata?.studentName))?.metadata?.studentName ||
+        filtered.find((t) => normalizeString(t.metadata?.name))?.metadata?.name ||
+        filtered.find((t) => normalizeString(t.metadata?.studentId))?.metadata?.studentId ||
+        discenteId;
 
       let sentimentsAvg = null;
       if (totalTranscriptions > 0) {
@@ -1101,12 +1111,18 @@ async function computeOverviewData() {
       };
 
       const doc = new PDFDocument({ margin: 50 });
-      const fileName = `relatorio-discente-${discenteId}.pdf`;
+      const safeName = discenteName
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const fileName = `relatorio-discente-${safeName || discenteId}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       doc.pipe(res);
 
-      doc.fontSize(16).text(`Relatório do discente ${discenteId}`, { underline: true });
+      doc.fontSize(16).text(`Relatório do discente ${discenteName}`, { underline: true });
       doc.moveDown(0.5);
       doc.fontSize(10).fillColor('gray').text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
       doc.fillColor('black');
@@ -1115,7 +1131,6 @@ async function computeOverviewData() {
       doc.fontSize(12).text('Resumo', { underline: true });
       doc.moveDown(0.3);
       doc.fontSize(11).text(`Total de transcrições: ${totalTranscriptions}`);
-      doc.text(`Tamanho total (KB): ${Math.round(totalSizeBytes / 1024)}`);
       if (sentimentsAvg) {
         doc.text(
           `Sentimento médio: +${(sentimentsAvg.positive * 100).toFixed(1)}% / ~${(sentimentsAvg.neutral * 100).toFixed(1)}% / -${(sentimentsAvg.negative * 100).toFixed(1)}%`

@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 // públicas
 import Solicitacao from '../pages/Solicitacao';
-import PosSolicitacao from '../pages/PosSolicitacao';
 import Login from '../pages/Login';
 
 // privadas
@@ -29,7 +28,6 @@ export default function AppRoutes() {
       <Routes>
         {/* ROTAS PÚBLICAS */}
         <Route path="/" element={<Solicitacao />} />
-        <Route path="/obrigado" element={<PosSolicitacao />} />
         <Route path="/login" element={<Login />} />
 
         {/* ROTAS PRIVADAS (só depois de login, via PrivateLayout) */}

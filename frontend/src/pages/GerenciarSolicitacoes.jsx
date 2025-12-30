@@ -7,6 +7,7 @@ import {
   orderBy,
 } from 'firebase/firestore';
 import { Link, useNavigate } from 'react-router-dom';
+import apiService from '../services/api';
 
 const BASE_CURSOS = [
   'Ciência da Computação',
@@ -19,6 +20,7 @@ const BASE_CURSOS = [
 
 export default function GerenciarSolicitacoes() {
   const [solicitacoes, setSolicitacoes] = useState([]);
+  const [meetingsBySolicitacao, setMeetingsBySolicitacao] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchName, setSearchName] = useState('');
@@ -35,12 +37,16 @@ export default function GerenciarSolicitacoes() {
         setLoading(true);
         setError(null);
 
-        // Busca TODAS as solicitações, ordenadas da mais recente para a mais antiga
-        const q = query(
+        // Busca solicitacoes e sessões relacionadas
+        const solicitacoesQuery = query(
           collection(db, 'solicitacoesAtendimento'),
           orderBy('createdAt', 'desc')
         );
-        const querySnapshot = await getDocs(q);
+
+        const [querySnapshot, meetingsResp] = await Promise.all([
+          getDocs(solicitacoesQuery),
+          apiService.getMeetings(),
+        ]);
 
         const solicitacoesData = querySnapshot.docs.map((doc) => ({
           id: doc.id,
@@ -48,6 +54,16 @@ export default function GerenciarSolicitacoes() {
         }));
 
         setSolicitacoes(solicitacoesData);
+
+        const map = {};
+        if (meetingsResp?.success && meetingsResp.data?.meetings) {
+          meetingsResp.data.meetings.forEach((m) => {
+            if (m.solicitacaoId) {
+              map[m.solicitacaoId] = m.id;
+            }
+          });
+        }
+        setMeetingsBySolicitacao(map);
       } catch (err) {
         console.error('Erro ao buscar solicitações:', err);
         setError('Erro ao carregar solicitações de atendimento.');
@@ -336,6 +352,24 @@ export default function GerenciarSolicitacoes() {
                       Ver detalhes do discente
                     </button>
 
+                    {normalizeStatus(solicitacao.status) === 'agendada' &&
+                      meetingsBySolicitacao[solicitacao.id] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(`/meetings/${meetingsBySolicitacao[solicitacao.id]}`)
+                          }
+                          className="
+                            px-3 py-1.5 text-xs font-medium rounded-md
+                            text-emerald-700 bg-emerald-50 border border-emerald-200
+                            hover:bg-emerald-100
+                            transition
+                          "
+                        >
+                          Abrir sessão
+                        </button>
+                      )}
+
                     <Link
                       to={`/agendar-atendimento/${solicitacao.id}`}
                       className="
@@ -415,6 +449,24 @@ export default function GerenciarSolicitacoes() {
                     >
                       Ver detalhes do discente
                     </button>
+
+                    {normalizeStatus(solicitacao.status) === 'agendada' &&
+                      meetingsBySolicitacao[solicitacao.id] && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(`/meetings/${meetingsBySolicitacao[solicitacao.id]}`)
+                          }
+                          className="
+                            px-3 py-1.5 text-xs font-medium rounded-md
+                            text-emerald-700 bg-emerald-50 border border-emerald-200
+                            hover:bg-emerald-100
+                            transition
+                          "
+                        >
+                          Abrir sessão
+                        </button>
+                      )}
                   </div>
                 </li>
               ))}

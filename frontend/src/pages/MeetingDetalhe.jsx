@@ -284,20 +284,26 @@ export default function MeetingDetalhe() {
         <p><strong>Curso:</strong> {meeting.curso || '---'}</p>
         <p><strong>Duração:</strong> {meeting.duration || 0} min</p>
         <p><strong>Criada em:</strong> {dateLabel(meeting.createdAt)}</p>
-        {meeting.meetLink && (
-          <p className="break-all">
-            <strong>Link:</strong> {meeting.meetLink}
-          </p>
-        )}
-        {solicitacao && (
-          <button
-            type="button"
-            onClick={() => navigate(`/solicitacoes/${solicitacao.id}`)}
-            className="text-blue-600 text-xs font-semibold hover:underline"
-          >
-            Ver solicitação vinculada
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2 mt-2">
+          {(meeting.discenteId || solicitacao?.discenteId) && (
+            <button
+              type="button"
+              onClick={() => navigate(`/discentes/${meeting.discenteId || solicitacao?.discenteId}`)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100"
+            >
+              Ver perfil do discente
+            </button>
+          )}
+          {solicitacao && (
+            <button
+              type="button"
+              onClick={() => navigate(`/solicitacoes/${solicitacao.id}`)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 rounded-md hover:bg-amber-100"
+            >
+              Ver solicitação vinculada
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow p-4 space-y-3">
