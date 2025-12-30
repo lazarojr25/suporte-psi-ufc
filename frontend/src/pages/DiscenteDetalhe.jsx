@@ -219,7 +219,7 @@ export default function DiscenteDetalhe() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName || `relatorio-discente-${discente.id}.txt`;
+      link.download = fileName || `relatorio-discente-${discente.studentId || discente.id}.txt`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -244,7 +244,7 @@ export default function DiscenteDetalhe() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName || `relatorio-discente-${discente.id}.pdf`;
+      link.download = fileName || `relatorio-discente-${discente.studentId || discente.id}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();

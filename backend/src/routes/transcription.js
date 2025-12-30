@@ -379,7 +379,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
       meetingId,
       studentName,
       studentEmail,
-      studentId,
+      studentId: studentId,
       curso,
       sessionDate, // novo campo opcional (YYYY-MM-DD)
     } = req.body;
@@ -390,7 +390,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
       meetingId: meetingId || null,
       studentName: studentName || null,
       studentEmail: studentEmail || null,
-      studentId: studentId || null,
+      matricula: studentId || null,
       curso: curso || null,
       sessionDate: sessionDate || null,
     };
@@ -405,7 +405,7 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
           extraInfo.solicitacaoId = extraInfo.solicitacaoId || data.solicitacaoId || null;
           extraInfo.studentName = extraInfo.studentName || data.studentName || null;
           extraInfo.studentEmail = extraInfo.studentEmail || data.studentEmail || null;
-          extraInfo.studentId = extraInfo.studentId || data.studentId || null;
+          extraInfo.matricula = extraInfo.matricula || data.studentId || data.matricula || null;
           extraInfo.curso = extraInfo.curso || data.curso || null;
           extraInfo.sessionDate =
             extraInfo.sessionDate ||
@@ -551,7 +551,7 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
       meetingId: meetingId || null,
       studentName: studentName || null,
       studentEmail: studentEmail || null,
-      studentId: studentId || null,
+      matricula: studentId || null,
       curso: curso || null,
       sessionDate: sessionDate || null,
     };
@@ -566,7 +566,7 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
           extraInfo.solicitacaoId = extraInfo.solicitacaoId || data.solicitacaoId || null;
           extraInfo.studentName = extraInfo.studentName || data.studentName || null;
           extraInfo.studentEmail = extraInfo.studentEmail || data.studentEmail || null;
-          extraInfo.studentId = extraInfo.studentId || data.studentId || null;
+          extraInfo.matricula = extraInfo.matricula || data.studentId || data.matricula || null;
           extraInfo.curso = extraInfo.curso || data.curso || null;
           extraInfo.sessionDate =
             extraInfo.sessionDate ||
@@ -712,7 +712,7 @@ router.post('/reprocess-all', async (req, res) => {
 // Gera um "slug" seguro com nome do aluno + data (YYYY-MM-DD)
 function buildTranscriptBaseName(extraInfo, fallbackBaseName) {
   const rawName = extraInfo.studentName || 'discente';
-  const rawId = extraInfo.studentId || '';       // matrícula
+  const rawId = extraInfo.matricula || '';       // matrícula
   const sessionDate =
     extraInfo.sessionDate ||
     new Date().toISOString().slice(0, 10);      // yyyy-mm-dd

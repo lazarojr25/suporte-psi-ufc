@@ -49,6 +49,50 @@ function normalizeString(value) {
   return str.length ? str : null;
 }
 
+const makeSafe = (value) =>
+  (value || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const makeSafeSlug = (name, matricula, fallback) => {
+  const safeName = makeSafe(name);
+  const safeMatricula = makeSafe(matricula);
+  return [safeName, safeMatricula].filter(Boolean).join('_') || makeSafe(fallback) || 'discente';
+};
+
+async function getDiscenteInfo(discenteId) {
+  if (!db || !discenteId) return null;
+  try {
+    const ref = db.collection('discentes').doc(discenteId);
+    const snap = await ref.get();
+    if (!snap.exists) return null;
+    return { id: snap.id, ...snap.data() };
+  } catch (err) {
+    console.warn('Falha ao ler discente para relatório:', err?.message);
+    return null;
+  }
+}
+
+async function getFirstSolicitacaoByDiscente(discenteId) {
+  if (!db || !discenteId) return null;
+  try {
+    const snap = await db
+      .collection('solicitacoesAtendimento')
+      .where('discenteId', '==', discenteId)
+      .limit(1)
+      .get();
+    if (snap.empty) return null;
+    const doc = snap.docs[0];
+    return { id: doc.id, ...doc.data() };
+  } catch (err) {
+    console.warn('Falha ao ler solicitação para relatório:', err?.message);
+    return null;
+  }
+}
+
 function buildDiscentePatterns(transcriptions = []) {
   const topics = [];
   const keywords = [];
@@ -953,11 +997,21 @@ async function computeOverviewData() {
 
       const totalTranscriptions = filtered.length;
       const historyPatterns = buildDiscentePatterns(filtered);
+      const discenteInfo = await getDiscenteInfo(discenteId);
+      const solicitacaoInfo = await getFirstSolicitacaoByDiscente(discenteId);
       const discenteName =
+        normalizeString(discenteInfo?.name) ||
+        normalizeString(solicitacaoInfo?.name) ||
         filtered.find((t) => normalizeString(t.metadata?.studentName))?.metadata?.studentName ||
         filtered.find((t) => normalizeString(t.metadata?.name))?.metadata?.name ||
-        filtered.find((t) => normalizeString(t.metadata?.studentId))?.metadata?.studentId ||
         discenteId;
+      const discenteMatricula =
+        normalizeString(discenteInfo?.matricula || discenteInfo?.studentId) ||
+        normalizeString(solicitacaoInfo?.matricula || solicitacaoInfo?.studentId) ||
+        filtered.find((t) => normalizeString(t.metadata?.matricula || t.metadata?.studentId))?.metadata?.matricula ||
+        filtered.find((t) => normalizeString(t.metadata?.studentId))?.metadata?.studentId ||
+        '';
+      const safeSlug = makeSafeSlug(discenteName, discenteMatricula, discenteId);
 
       let sentimentsAvg = null;
       if (totalTranscriptions > 0) {
@@ -1047,13 +1101,7 @@ async function computeOverviewData() {
       }
 
       const content = lines.join('\n');
-      const safeName = discenteName
-        .toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      const fileName = `relatorio-discente-${safeName || discenteId}.txt`;
+      const fileName = `relatorio-discente-${safeSlug}.txt`;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       res.send(content);
@@ -1076,11 +1124,21 @@ async function computeOverviewData() {
 
       const totalTranscriptions = filtered.length;
       const historyPatterns = buildDiscentePatterns(filtered);
+      const discenteInfo = await getDiscenteInfo(discenteId);
+      const solicitacaoInfo = await getFirstSolicitacaoByDiscente(discenteId);
       const discenteName =
+        normalizeString(discenteInfo?.name) ||
+        normalizeString(solicitacaoInfo?.name) ||
         filtered.find((t) => normalizeString(t.metadata?.studentName))?.metadata?.studentName ||
         filtered.find((t) => normalizeString(t.metadata?.name))?.metadata?.name ||
-        filtered.find((t) => normalizeString(t.metadata?.studentId))?.metadata?.studentId ||
         discenteId;
+      const discenteMatricula =
+        normalizeString(discenteInfo?.matricula || discenteInfo?.studentId) ||
+        normalizeString(solicitacaoInfo?.matricula || solicitacaoInfo?.studentId) ||
+        filtered.find((t) => normalizeString(t.metadata?.matricula || t.metadata?.studentId))?.metadata?.matricula ||
+        filtered.find((t) => normalizeString(t.metadata?.studentId))?.metadata?.studentId ||
+        '';
+      const safeSlug = makeSafeSlug(discenteName, discenteMatricula, discenteId);
 
       let sentimentsAvg = null;
       if (totalTranscriptions > 0) {
@@ -1111,13 +1169,7 @@ async function computeOverviewData() {
       };
 
       const doc = new PDFDocument({ margin: 50 });
-      const safeName = discenteName
-        .toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      const fileName = `relatorio-discente-${safeName || discenteId}.pdf`;
+      const fileName = `relatorio-discente-${safeSlug}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       doc.pipe(res);
@@ -1403,7 +1455,10 @@ async function computeOverviewData() {
         transcriptions = transcriptions.filter((t) => {
           const name = t.metadata?.studentName?.toLowerCase() || '';
           const email = t.metadata?.studentEmail?.toLowerCase() || '';
-          const ra = t.metadata?.studentId?.toLowerCase() || '';
+          const ra =
+            t.metadata?.matricula?.toLowerCase() ||
+            t.metadata?.studentId?.toLowerCase() ||
+            '';
           return name.includes(s) || email.includes(s) || ra.includes(s);
         });
       }

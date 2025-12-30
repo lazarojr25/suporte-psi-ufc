@@ -44,7 +44,7 @@ class TranscriptionService {
     const headerLines = [];
     headerLines.push('=== Dados da sessão ===');
     if (extraInfo.studentName) headerLines.push(`Discente: ${extraInfo.studentName}`);
-    if (extraInfo.studentId) headerLines.push(`Matrícula: ${extraInfo.studentId}`);
+    if (extraInfo.matricula) headerLines.push(`Matrícula: ${extraInfo.matricula}`);
     if (extraInfo.curso) headerLines.push(`Curso: ${extraInfo.curso}`);
     if (extraInfo.sessionDate) headerLines.push(`Data da sessão: ${extraInfo.sessionDate}`);
     if (extraInfo.meetingId) headerLines.push(`Meeting ID: ${extraInfo.meetingId}`);
