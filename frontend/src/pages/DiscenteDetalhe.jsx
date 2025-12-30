@@ -264,7 +264,7 @@ export default function DiscenteDetalhe() {
     { key: 'recurringThemes', label: 'Temas recorrentes' },
     { key: 'repeatedIdeas', label: 'Ideias repetidas' },
     { key: 'emotionalPatterns', label: 'Padrões emocionais' },
-    { key: 'commonTriggers', label: 'Sugestão de ações' },
+    { key: 'commonTriggers', label: 'Próximos passos sugeridos' },
   ];
 
   const periodStartValue =

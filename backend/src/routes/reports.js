@@ -1074,7 +1074,7 @@ async function computeOverviewData() {
           lines.push(`- Padrões emocionais: ${historyPatterns.emotionalPatterns.join(', ')}`);
         }
         if (historyPatterns.commonTriggers?.length) {
-          lines.push(`- Sugestão de ações: ${historyPatterns.commonTriggers.join(', ')}`);
+          lines.push(`- Próximos passos sugeridos: ${historyPatterns.commonTriggers.join(', ')}`);
         }
       }
 
@@ -1203,7 +1203,7 @@ async function computeOverviewData() {
         patterns.push(`Padrões emocionais: ${historyPatterns.emotionalPatterns.join(', ')}`);
       }
       if (historyPatterns?.commonTriggers?.length) {
-        patterns.push(`Gatilhos comuns: ${historyPatterns.commonTriggers.join(', ')}`);
+        patterns.push(`Próximos passos sugeridos: ${historyPatterns.commonTriggers.join(', ')}`);
       }
       if (patterns.length === 0) {
         doc.fontSize(10).fillColor('gray').text('Nenhum padrão identificado até o momento.');
@@ -1231,9 +1231,6 @@ async function computeOverviewData() {
             if (t.analysis?.summary) {
               doc.fontSize(9).fillColor('gray').text(`Resumo: ${t.analysis.summary}`);
               doc.fillColor('black');
-            }
-            if (Array.isArray(t.analysis?.actionableInsights) && t.analysis.actionableInsights.length > 0) {
-              doc.fontSize(9).text(`Sugestões: ${t.analysis.actionableInsights.join(' | ')}`);
             }
             doc.moveDown(0.4);
           });

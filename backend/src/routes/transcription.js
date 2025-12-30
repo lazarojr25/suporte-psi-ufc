@@ -172,7 +172,7 @@ async function processMediaJob({ filePath, fileName, extraInfo, jobId }) {
 
     const wavStats = fs.statSync(wavPath);
     const wavSizeMB = wavStats.size / (1024 * 1024);
-    const SEGMENT_THRESHOLD_MB = 20;
+    const SEGMENT_THRESHOLD_MB = 90;
 
     let mergedText;
     let analysis = null;
