@@ -17,11 +17,31 @@ function getOAuthClient() {
   return client;
 }
 
-const encodeSubject = (subject) =>
-  subject ? `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=` : '';
+const encodeSubject = (subject) => {
+  if (!subject) return '';
+  const bytes = Buffer.from(subject, 'utf8');
+  const encoded = Array.from(bytes)
+    .map((b) => {
+      // RFC 2047 "Q" encoding
+      if (
+        (b >= 33 && b <= 60) ||
+        (b >= 62 && b <= 126) &&
+        b !== 63 && // ?
+        b !== 61 && // =
+        b !== 95    // _
+      ) {
+        return String.fromCharCode(b);
+      }
+      if (b === 32) return '_';
+      return `=${b.toString(16).toUpperCase().padStart(2, '0')}`;
+    })
+    .join('');
+  return `=?UTF-8?Q?${encoded}?=`;
+};
 
 function buildRawMessage({ from, to, subject, text, html }) {
   const lines = [];
+  lines.push('MIME-Version: 1.0');
   lines.push(`From: ${from}`);
   lines.push(`To: ${to}`);
   lines.push(`Subject: ${encodeSubject(subject)}`);
