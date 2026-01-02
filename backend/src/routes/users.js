@@ -1,26 +1,18 @@
 import express from 'express';
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminAuth, getAdminDb } from '../firebaseAdmin.js';
 
 const router = express.Router();
 
 let appInitialized = false;
+let auth = null;
+let db = null;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
+  auth = getAdminAuth();
+  db = getAdminDb();
   appInitialized = true;
 } catch (error) {
-  if (/already exists/u.test(error.message)) {
-    appInitialized = true;
-  } else {
-    console.error('Erro ao inicializar Firebase Admin em users:', error);
-  }
+  console.error('Erro ao inicializar Firebase Admin em users:', error);
 }
-
-const auth = getAuth();
-const db = getFirestore();
 
 router.post('/', async (req, res) => {
   try {

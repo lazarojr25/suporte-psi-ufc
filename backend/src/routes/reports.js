@@ -1,8 +1,7 @@
 import TranscriptionService from '../services/transcriptionService.js';
 import express from 'express';
 import PDFDocument from 'pdfkit';
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from '../firebaseAdmin.js';
 
 const router = express.Router();
 
@@ -11,16 +10,9 @@ const transcriptionService = new TranscriptionService();
 // Firestore (para consultar solicitações)
 let db = null;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
-  db = getFirestore();
+  db = getAdminDb();
 } catch (error) {
-  if (/already exists/u.test(error.message)) {
-    db = getFirestore();
-  } else {
-    console.error('Erro ao inicializar Firebase Admin em reports:', error);
-  }
+  console.error('Erro ao inicializar Firebase Admin em reports:', error);
 }
 /**
  * Agrupa e ordena frequência de termos (keywords, tópicos, etc.)

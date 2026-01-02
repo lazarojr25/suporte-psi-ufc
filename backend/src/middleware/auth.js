@@ -1,23 +1,13 @@
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminAuth, getAdminDb } from '../firebaseAdmin.js';
 
-let appInitialized = false;
+let auth = null;
+let db = null;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
-  appInitialized = true;
+  auth = getAdminAuth();
+  db = getAdminDb();
 } catch (err) {
-  if (/already exists/u.test(err.message)) {
-    appInitialized = true;
-  } else {
-    console.error('Falha ao inicializar Firebase Admin para auth middleware:', err?.message);
-  }
+  console.error('Falha ao inicializar Firebase Admin para auth middleware:', err?.message);
 }
-
-const auth = appInitialized ? getAuth() : null;
-const db = appInitialized ? getFirestore() : null;
 
 const normalizeRole = (role) => {
   const r = (role || '').toLowerCase();
@@ -46,7 +36,8 @@ async function resolveUserRole(uid) {
  * - Requer header Authorization: Bearer <token>
  * - Se requireAdmin = true, exige role admin (customClaims.role ou doc em users)
  */
-export function verifyAuth(requireAdmin = false) {
+export function verifyAuth(requireAdmin = false, options = {}) {
+  const { allowedRoles = null, allowAnonymous = false } = options;
   return async (req, res, next) => {
     if (!auth) {
       return res.status(500).json({
@@ -61,6 +52,10 @@ export function verifyAuth(requireAdmin = false) {
       : null;
 
     if (!tokenStr) {
+      if (allowAnonymous) {
+        req.user = null;
+        return next();
+      }
       return res.status(401).json({ success: false, message: 'Token ausente.' });
     }
 
@@ -78,6 +73,10 @@ export function verifyAuth(requireAdmin = false) {
 
       if (requireAdmin && role !== 'admin') {
         return res.status(403).json({ success: false, message: 'Acesso restrito a administradores.' });
+      }
+
+      if (Array.isArray(allowedRoles) && allowedRoles.length && !allowedRoles.includes(role)) {
+        return res.status(403).json({ success: false, message: 'Acesso não permitido para este perfil.' });
       }
 
       next();

@@ -41,6 +41,13 @@ export default function MeetingDetalhe() {
   const [saveMsg, setSaveMsg] = useState(null);
   const [saveErr, setSaveErr] = useState(null);
 
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [scheduleDuration, setScheduleDuration] = useState(45);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState(null);
+  const [scheduleErr, setScheduleErr] = useState(null);
+
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState(null);
@@ -64,6 +71,9 @@ export default function MeetingDetalhe() {
         setInformalNotes(
           m.informalNotes || m.completionNotes || m.notes || ''
         );
+        setScheduleDate(m.scheduledDate || '');
+        setScheduleTime(m.scheduledTime || '');
+        setScheduleDuration(m.duration || 45);
         setClinicalRecord({
           identificacaoServico: m.clinicalRecord?.identificacaoServico || '',
           identificacaoProfissional: m.clinicalRecord?.identificacaoProfissional || '',
@@ -120,6 +130,57 @@ export default function MeetingDetalhe() {
       setSaveErr('Não foi possível salvar o registro.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleReschedule = async () => {
+    if (!meeting) return;
+    setScheduleSaving(true);
+    setScheduleMsg(null);
+    setScheduleErr(null);
+    try {
+      await apiService.updateMeeting(meetingId, {
+        scheduledDate: scheduleDate,
+        scheduledTime: scheduleTime,
+        duration: scheduleDuration,
+        status: 'agendada',
+      });
+      setScheduleMsg('Sessão reagendada.');
+      const updated = await apiService.getMeeting(meetingId);
+      if (updated?.success && updated.data) {
+        const m = updated.data?.data || updated.data;
+        setMeeting(m);
+        setScheduleDate(m.scheduledDate || '');
+        setScheduleTime(m.scheduledTime || '');
+        setScheduleDuration(m.duration || 45);
+      }
+    } catch (err) {
+      console.error(err);
+      setScheduleErr('Não foi possível reagendar.');
+    } finally {
+      setScheduleSaving(false);
+    }
+  };
+
+  const handleCancelMeeting = async () => {
+    if (!meeting) return;
+    if (!window.confirm('Deseja cancelar esta sessão?')) return;
+    setScheduleSaving(true);
+    setScheduleMsg(null);
+    setScheduleErr(null);
+    try {
+      await apiService.updateMeeting(meetingId, { status: 'cancelada' });
+      setScheduleMsg('Sessão cancelada.');
+      const updated = await apiService.getMeeting(meetingId);
+      if (updated?.success && updated.data) {
+        const m = updated.data?.data || updated.data;
+        setMeeting(m);
+      }
+    } catch (err) {
+      console.error(err);
+      setScheduleErr('Não foi possível cancelar.');
+    } finally {
+      setScheduleSaving(false);
     }
   };
 
@@ -236,20 +297,21 @@ export default function MeetingDetalhe() {
 
   const statusBadge = useMemo(() => {
     if (!meeting?.status) return null;
+    const normalizedStatus =
+      meeting.status === 'processando' ? 'em_processamento' : meeting.status;
     const base =
       'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold';
-    switch (meeting.status) {
+    switch (normalizedStatus) {
       case 'concluida':
         return <span className={`${base} bg-green-100 text-green-800`}>Concluída</span>;
       case 'em_processamento':
-      case 'processando':
         return <span className={`${base} bg-amber-100 text-amber-800`}>Processando</span>;
       case 'agendada':
         return <span className={`${base} bg-blue-100 text-blue-800`}>Agendada</span>;
       case 'cancelada':
         return <span className={`${base} bg-red-100 text-red-800`}>Cancelada</span>;
       default:
-        return <span className={`${base} bg-gray-100 text-gray-700`}>{meeting.status}</span>;
+        return <span className={`${base} bg-gray-100 text-gray-700`}>{normalizedStatus}</span>;
     }
   }, [meeting]);
 
@@ -305,6 +367,75 @@ export default function MeetingDetalhe() {
           )}
         </div>
       </div>
+
+      {meeting.status !== 'concluida' && meeting.status !== 'cancelada' && (
+        <div className="bg-white rounded-xl shadow p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs uppercase text-gray-500">Agendamento</p>
+            {scheduleMsg && <span className="text-[11px] text-green-600">{scheduleMsg}</span>}
+            {scheduleErr && <span className="text-[11px] text-red-600">{scheduleErr}</span>}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="text-sm space-y-1">
+              <span className="text-[11px] text-gray-600 uppercase">Data</span>
+              <input
+                type="date"
+                value={scheduleDate}
+                onChange={(e) => setScheduleDate(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="text-[11px] text-gray-600 uppercase">Hora</span>
+              <input
+                type="time"
+                value={scheduleTime}
+                onChange={(e) => setScheduleTime(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="text-[11px] text-gray-600 uppercase">Duração (min)</span>
+              <input
+                type="number"
+                min={15}
+                step={5}
+                value={scheduleDuration}
+                onChange={(e) => setScheduleDuration(Number(e.target.value))}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleReschedule}
+              disabled={scheduleSaving || !scheduleDate || !scheduleTime}
+              className="px-4 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
+            >
+              {scheduleSaving ? 'Salvando...' : 'reagendar'}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelMeeting}
+              disabled={scheduleSaving}
+              className="px-4 py-2 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+            >
+              {scheduleSaving ? 'Processando...' : 'Cancelar sessão'}
+            </button>
+            {meeting.meetLink && (
+              <a
+                href={meeting.meetLink}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 rounded-md border text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Abrir link da sessão
+              </a>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -548,6 +679,7 @@ export default function MeetingDetalhe() {
           </p>
         )}
       </div>
+
     </div>
   );
 }

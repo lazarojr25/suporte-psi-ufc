@@ -1,25 +1,6 @@
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from '../firebaseAdmin.js';
 
-// Inicialização do Firebase Admin SDK
-// Em um ambiente de produção, as credenciais seriam carregadas automaticamente
-// ou fornecidas via variável de ambiente GOOGLE_APPLICATION_CREDENTIALS.
-// Para fins de simulação e teste local, usaremos uma inicialização básica.
-// O usuário precisará configurar o Firebase Admin SDK corretamente em seu ambiente.
-try {
-  initializeApp({
-    credential: applicationDefault(),
-    // O URL do banco de dados pode ser necessário dependendo do serviço
-    // databaseURL: 'https://<DATABASE_NAME>.firebaseio.com',
-  });
-} catch (error) {
-  // Evita erro de inicialização se já estiver inicializado (ex: em testes)
-  if (!/already exists/u.test(error.message)) {
-    console.warn('Aviso: Firebase Admin SDK não inicializado. A persistência no Firestore será simulada.', error.message);
-  }
-}
-
-const db = getFirestore();
+const db = getAdminDb();
 
 // Coleção onde os metadados e análises das transcrições serão salvos
 const TRANSCRIPTIONS_COLLECTION = 'transcriptions_metadata';

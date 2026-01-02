@@ -59,77 +59,85 @@ export default function TopBar({ user, role }) {
               >
                 Solicitações
               </NavLink>
-            <NavLink
-              to="/discentes"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkInactive}`
-              }
-            >
-              Discentes
-            </NavLink>
-          </nav>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {user && (
-            <span className="hidden sm:inline text-sm text-gray-600">
-              {user.email}
-            </span>
-          )}
-
-          {user && (
-            <div className="relative" ref={adminMenuRef}>
-              <button
-                type="button"
-                onClick={() => setAdminMenuOpen((v) => !v)}
-                className="px-3 py-2 text-sm font-semibold border rounded-md text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1"
+              <NavLink
+                to="/sessoes"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
               >
-                {isAdmin ? 'Admin' : 'Menu'}
-                <span className="text-xs">{adminMenuOpen ? '▲' : '▼'}</span>
-              </button>
-              {adminMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-lg z-20">
-                  {isAdmin && (
-                    <>
-                      <NavLink
-                        to="/relatorios"
-                        className={({ isActive }) =>
-                          `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
-                        }
-                        onClick={() => setAdminMenuOpen(false)}
-                      >
-                        Relatórios
-                      </NavLink>
-                      <NavLink
-                        to="/usuarios"
-                        className={({ isActive }) =>
-                          `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
-                        }
-                        onClick={() => setAdminMenuOpen(false)}
-                      >
-                        Usuários
-                      </NavLink>
-                      <div className="h-px bg-gray-100 my-1" />
-                    </>
-                  )}
-                  <NavLink
-                    to="/configuracoes"
-                    className={({ isActive }) =>
-                      `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
-                    }
-                    onClick={() => setAdminMenuOpen(false)}
-                  >
-                    Configurações
-                  </NavLink>
-                </div>
-              )}
-            </div>
-          )}
+                Sessões
+              </NavLink>
+              <NavLink
+                to="/discentes"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
+                Discentes
+              </NavLink>
+            </nav>
+          </div>
 
-          {user && (
-            <button
-              onClick={handleLogout}
-              className="px-3 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
+          <div className="flex items-center gap-3">
+            {user && (
+              <span className="hidden sm:inline text-sm text-gray-600">
+                {user.email}
+              </span>
+            )}
+
+            {user && (
+              <div className="relative" ref={adminMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAdminMenuOpen((v) => !v)}
+                  className="px-3 py-2 text-sm font-semibold border rounded-md text-gray-800 hover:bg-gray-50 inline-flex items-center gap-1"
+                >
+                  {isAdmin ? 'Admin' : 'Menu'}
+                  <span className="text-xs">{adminMenuOpen ? '▲' : '▼'}</span>
+                </button>
+                {adminMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-lg z-20">
+                    {isAdmin && (
+                      <>
+                        <NavLink
+                          to="/relatorios"
+                          className={({ isActive }) =>
+                            `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
+                          }
+                          onClick={() => setAdminMenuOpen(false)}
+                        >
+                          Relatórios
+                        </NavLink>
+                        <NavLink
+                          to="/usuarios"
+                          className={({ isActive }) =>
+                            `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
+                          }
+                          onClick={() => setAdminMenuOpen(false)}
+                        >
+                          Usuários
+                        </NavLink>
+                        <div className="h-px bg-gray-100 my-1" />
+                      </>
+                    )}
+                    <NavLink
+                      to="/configuracoes"
+                      className={({ isActive }) =>
+                        `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
+                      }
+                      onClick={() => setAdminMenuOpen(false)}
+                    >
+                      Configurações
+                    </NavLink>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {user && (
+              <button
+                onClick={handleLogout}
+                className="px-3 py-2 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700"
               >
                 Sair
               </button>
@@ -155,6 +163,14 @@ export default function TopBar({ user, role }) {
               }
             >
               Solicitações
+            </NavLink>
+            <NavLink
+              to="/sessoes"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkInactive}`
+              }
+            >
+              Sessões
             </NavLink>
             <NavLink
               to="/discentes"

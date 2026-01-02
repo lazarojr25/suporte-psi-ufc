@@ -1,22 +1,14 @@
 import express from 'express';
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from '../firebaseAdmin.js';
 
 const router = express.Router();
 
 // --------- Firebase Admin / Firestore ---------
 let db;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
-  db = getFirestore();
+  db = getAdminDb();
 } catch (error) {
-  if (/already exists/u.test(error.message)) {
-    db = getFirestore();
-  } else {
-    console.error('Erro ao inicializar Firebase Admin:', error);
-  }
+  console.error('Erro ao inicializar Firebase Admin:', error);
 }
 
 // --------- helpers ---------

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -55,12 +56,16 @@ app.get('/api/health', (req, res) => {
 });
 
 // Rotas da API
-app.use('/api/transcription', verifyAuth(false), transcriptionRoutes);
+// - transcrição/reports: apenas staff/admin
+// - meetings: qualquer usuário autenticado
+// - attendance-config/users: admin
+// - solicitacoes: permite anônimo (discente) criar; leitura exige token
+app.use('/api/transcription', verifyAuth(false, { allowedRoles: ['admin', 'servidor'] }), transcriptionRoutes);
 app.use('/api/meetings', verifyAuth(false), meetingRoutes);
 app.use('/api/attendance-config', verifyAuth(true), attendanceConfigRoutes);
-app.use('/api/solicitacoes', verifyAuth(false), solicitacaoRoutes);
+app.use('/api/solicitacoes', verifyAuth(false, { allowAnonymous: true }), solicitacaoRoutes);
 app.use('/api/users', verifyAuth(true), usersRoutes);
-app.use('/api/reports', verifyAuth(true), reportsRouter);
+app.use('/api/reports', verifyAuth(false, { allowedRoles: ['admin', 'servidor'] }), reportsRouter);
 
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {

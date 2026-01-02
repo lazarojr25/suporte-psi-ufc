@@ -29,6 +29,8 @@ backend/.env.production
 
 # Credenciais Firebase 
 *firebase-adminsdk*.json
+backend/**/service-account*.json
+backend/**/sa-*.json
 
 # Pastas de trabalho / runtime (não versionar)
 backend/uploads/

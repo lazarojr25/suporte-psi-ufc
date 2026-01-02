@@ -1,23 +1,16 @@
 // src/routes/solicitacoes.js
 import express from 'express';
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from '../firebaseAdmin.js';
 
 const router = express.Router();
+const isStaff = (user) => user && (user.role === 'admin' || user.role === 'servidor');
 
 // Inicializa Firebase Admin (mesma lógica que você já usa em meetings.js)
 let db;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
-  db = getFirestore();
+  db = getAdminDb();
 } catch (error) {
-  if (/already exists/u.test(error.message)) {
-    db = getFirestore();
-  } else {
-    console.error('Erro ao inicializar Firebase Admin em solicitacoes:', error);
-  }
+  console.error('Erro ao inicializar Firebase Admin em solicitacoes:', error);
 }
 
 function mapDoc(doc) {
@@ -30,6 +23,13 @@ function mapDoc(doc) {
 // GET /api/solicitacoes?discenteId=xxx&status=yyy
 router.get('/', async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Autenticação necessária para consultar solicitações.',
+      });
+    }
+
     const { discenteId, status } = req.query;
 
     let ref = db.collection('solicitacoesAtendimento');
@@ -63,6 +63,13 @@ router.get('/', async (req, res) => {
 // (opcional) GET /api/solicitacoes/:id
 router.get('/:id', async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Autenticação necessária para consultar solicitações.',
+      });
+    }
+
     const { id } = req.params;
     const docRef = db.collection('solicitacoesAtendimento').doc(id);
     const snap = await docRef.get();

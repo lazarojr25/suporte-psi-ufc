@@ -4,8 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import TranscriptionService from '../services/transcriptionService.js';
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from '../firebaseAdmin.js';
 
 // Conversão e segmentação
 import ffmpeg from 'fluent-ffmpeg';
@@ -27,16 +26,9 @@ const reprocessLocks = new Set(); // evita reprocessamentos concorrentes por dis
 // Firebase Admin (para vincular meeting/solicitação quando possível)
 let db = null;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
-  db = getFirestore();
+  db = getAdminDb();
 } catch (error) {
-  if (/already exists/u.test(error.message)) {
-    db = getFirestore();
-  } else {
-    console.error('Erro ao inicializar Firebase Admin em transcription:', error);
-  }
+  console.error('Erro ao inicializar Firebase Admin em transcription:', error);
 }
 
 // -------------------- utils --------------------
@@ -45,6 +37,11 @@ const ensureDir = (dir) => {
 };
 const toSafeBase = (name) =>
   name.replace(/[^\w\d\-_.]+/g, '_').replace(/_+/g, '_');
+const isSafeFileName = (name) =>
+  typeof name === 'string' &&
+  name.length > 0 &&
+  /^[A-Za-z0-9._-]+$/.test(name) &&
+  !name.includes('..');
 
 const removeIfExists = (p) => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {} };
 const removeDir = (dir) => { try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -486,6 +483,9 @@ router.get('/by-discente/:discenteId', async (req, res) => {
 router.get('/:fileName', (req, res) => {
   try {
     const { fileName } = req.params;
+    if (!isSafeFileName(fileName)) {
+      return res.status(400).json({ success: false, message: 'fileName inválido.' });
+    }
     const transcription = transcriptionService.getTranscription(fileName);
     if (transcription) res.json({ success: true, data: transcription });
     else res.status(404).json({ success: false, message: 'Transcrição não encontrada' });
@@ -637,6 +637,9 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
 router.delete('/:fileName', async (req, res) => {
   try {
     const { fileName } = req.params;
+    if (!isSafeFileName(fileName)) {
+      return res.status(400).json({ success: false, message: 'fileName inválido.' });
+    }
     const result = await transcriptionService.deleteTranscription(fileName);
     if (!result.success) {
       return res.status(400).json({ success: false, message: result.message });
