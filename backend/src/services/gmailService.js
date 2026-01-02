@@ -17,11 +17,14 @@ function getOAuthClient() {
   return client;
 }
 
+const encodeSubject = (subject) =>
+  subject ? `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=` : '';
+
 function buildRawMessage({ from, to, subject, text, html }) {
   const lines = [];
   lines.push(`From: ${from}`);
   lines.push(`To: ${to}`);
-  lines.push(`Subject: ${subject}`);
+  lines.push(`Subject: ${encodeSubject(subject)}`);
   if (html) {
     lines.push('Content-Type: text/html; charset="UTF-8"');
     lines.push('');
