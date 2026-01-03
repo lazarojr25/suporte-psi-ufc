@@ -204,7 +204,9 @@ class ApiService {
   }
 
   async exportReportsOverview() {
-    const res = await fetch(`${this.baseURL}/reports/overview/export`);
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/overview/export`, { headers });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const contentDisposition = res.headers.get('content-disposition') || '';
     let fileName = null;
@@ -217,7 +219,9 @@ class ApiService {
   }
 
   async exportReportsOverviewPdf() {
-    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf`);
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf`, { headers });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const contentDisposition = res.headers.get('content-disposition') || '';
     let fileName = null;
