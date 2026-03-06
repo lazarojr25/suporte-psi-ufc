@@ -1,29 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { auth } from '../services/firebase';
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
+import useDashboardData from './Dashboard/hooks/useDashboardData';
+import DashboardView from './Dashboard/components/DashboardView';
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null);
-  const navigate = useNavigate();
+  const { user } = useDashboardData();
 
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      if (!currentUser || !currentUser.email.endsWith('@ufc.br')) {
-        navigate('/login');  // Redireciona para o login se não for um funcionário autenticado
-      } else {
-        setUser(currentUser);
-      }
-    });
-
-    return unsubscribe;
-  }, [navigate]);
-
-  return user ? (
-    <div>
-      <h1>Bem-vindo ao Dashboard</h1>
-      {/* Aqui vai a lógica do painel de administração */}
-    </div>
-  ) : (
-    <div>Carregando...</div>
-  );
+  return user ? <DashboardView /> : <div>Carregando...</div>;
 }
