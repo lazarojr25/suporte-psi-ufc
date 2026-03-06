@@ -102,7 +102,14 @@ export default function AgendarAtendimento() {
         updatedAt: serverTimestamp() // opcional, pra ter histórico
       });
 
-      alert('Consulta agendada com sucesso!');
+      if (response?.calendar?.success === false) {
+        const msg = response?.calendar?.message
+          ? `Consulta agendada, mas não foi possível criar o evento no Google Calendar: ${response.calendar.message}`
+          : 'Consulta agendada, mas não foi possível criar o evento no Google Calendar.';
+        alert(msg);
+      } else {
+        alert('Consulta agendada com sucesso!');
+      }
       navigate('/gerenciar-solicitacoes');
     } catch (err) {
       console.error('Erro ao agendar consulta:', err);

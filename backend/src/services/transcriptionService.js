@@ -37,7 +37,7 @@ class TranscriptionService {
     // Cliente único do Gemini pra toda a service
     this.ai = new GoogleGenAI({ apiKey });
     // Nome do modelo (pode sobrescrever via .env se quiser)
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
   }
 
   formatTranscriptionDocument(transcription, extraInfo = {}, analysis = {}) {
@@ -152,6 +152,8 @@ class TranscriptionService {
   async transcribeAudio(audioPath, outputFileName, extraInfo = {}) {
     let transcriptionText = '';
     let uploadedFile = null;
+    let analysisStatus = 'ok';
+    let analysisError = null;
 
     try {
       // Upload do arquivo já convertido para WAV 16k mono
@@ -223,28 +225,43 @@ class TranscriptionService {
         success: true,
         transcription,
         analysis: null,
+        analysisStatus: 'skipped',
+        analysisError: null,
         metadata: null,
         fileName: null,
       };
     }
 
     // Transcrição final: analisa e salva
-    const analysis = await this.analyzeTranscription(transcription);
-    const formatted = this.formatTranscriptionDocument(transcription, extraInfo, analysis);
+    let analysis = null;
+    try {
+      analysis = await this.analyzeTranscription(transcription);
+    } catch (error) {
+      console.error('Erro ao chamar a API do Gemini para análise:', error);
+      analysisStatus = 'failed';
+      analysisError = error?.message || 'Falha ao analisar transcrição.';
+    }
+
+    const formatted = this.formatTranscriptionDocument(transcription, extraInfo, analysis || {});
     const metadata = await this.saveCombinedMetadata(
       outputFileName,
       formatted,
       extraInfo,
-      analysis
+      analysis,
+      analysisStatus,
+      analysisError
     );
 
     const finalPath = path.join(this.transcriptionsDir, outputFileName);
     fs.writeFileSync(finalPath, formatted, 'utf-8');
 
     return {
-      success: true,
+      success: analysisStatus !== 'failed',
+      error: analysisStatus === 'failed' ? analysisError : null,
       transcription,
       analysis,
+      analysisStatus,
+      analysisError,
       metadata,
       fileName: outputFileName,
     };
@@ -255,22 +272,37 @@ class TranscriptionService {
    * e faz a análise com Gemini.
    */
   async saveFinalTranscription(outputFileName, mergedText, extraInfo = {}) {
-    const analysis = await this.analyzeTranscription(mergedText);
-    const formatted = this.formatTranscriptionDocument(mergedText, extraInfo, analysis);
+    let analysis = null;
+    let analysisStatus = 'ok';
+    let analysisError = null;
+    try {
+      analysis = await this.analyzeTranscription(mergedText);
+    } catch (error) {
+      console.error('Erro ao chamar a API do Gemini para análise:', error);
+      analysisStatus = 'failed';
+      analysisError = error?.message || 'Falha ao analisar transcrição.';
+    }
+
+    const formatted = this.formatTranscriptionDocument(mergedText, extraInfo, analysis || {});
     const metadata = await this.saveCombinedMetadata(
       outputFileName,
       formatted,
       extraInfo,
-      analysis
+      analysis,
+      analysisStatus,
+      analysisError
     );
 
     const finalPath = path.join(this.transcriptionsDir, outputFileName);
     fs.writeFileSync(finalPath, formatted, 'utf-8');
 
     return {
-      success: true,
+      success: analysisStatus !== 'failed',
+      error: analysisStatus === 'failed' ? analysisError : null,
       transcription: mergedText,
       analysis,
+      analysisStatus,
+      analysisError,
       metadata,
       fileName: outputFileName,
     };
@@ -292,55 +324,40 @@ Texto a ser analisado:
 
 Retorne somente o JSON, sem markdown.`;
 
-    try {
-      const result = await this.ai.models.generateContent({
-        model: this.modelName,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        // nome correto da config na lib nova é “generationConfig”
-        generationConfig: {
-          responseMimeType: 'application/json',
-        },
-      });
+    const result = await this.ai.models.generateContent({
+      model: this.modelName,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      // nome correto da config na lib nova é “generationConfig”
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    });
 
-      const raw =
-        typeof result.text === 'function'
-          ? result.text()
-          : result.text ||
-            (result.response && typeof result.response.text === 'function'
-              ? result.response.text()
-              : '');
+    const raw =
+      typeof result.text === 'function'
+        ? result.text()
+        : result.text ||
+          (result.response && typeof result.response.text === 'function'
+            ? result.response.text()
+            : '');
 
-      const analysis = JSON.parse(raw);
-      return analysis;
-    } catch (error) {
-      console.error('Erro ao chamar a API do Gemini para análise:', error);
-      // Fallback em caso de falha
-      return {
-        sentiments: { positive: 0.5, neutral: 0.3, negative: 0.2 },
-        keywords: ['erro', 'analise_falhou', 'simulacao'],
-        topics: ['erro_api', 'fallback'],
-        summary:
-          'Resumo simulado devido a falha na análise automática do Gemini.',
-        actionableInsights: [
-          'Verificar logs da API do Gemini.',
-          'Tentar novamente mais tarde.',
-          'Avaliar manualmente o conteúdo desta sessão.',
-        ],
-      };
-    }
+    const analysis = JSON.parse(raw);
+    return analysis;
   }
 
   /**
    * Salva metadados combinados (upload + análise) no Firestore
    * e também em metadata.json como fallback.
    */
-  async saveCombinedMetadata(fileName, content, extraInfo, analysis) {
+  async saveCombinedMetadata(fileName, content, extraInfo, analysis, analysisStatus = 'ok', analysisError = null) {
     const newEntry = {
       fileName,
       size: content.length,
       createdAt: new Date().toISOString(),
       metadata: extraInfo,
       analysis,
+      analysisStatus,
+      analysisError,
     };
 
     try {
@@ -421,9 +438,30 @@ Retorne somente o JSON, sem markdown.`;
         ? fullContent.slice(separatorIndex + separator.length).trimStart()
         : fullContent;
 
-    const analysis = await this.analyzeTranscription(content);
-    const formatted = this.formatTranscriptionDocument(content, extraInfo, analysis);
-    await this.saveCombinedMetadata(fileName, formatted, extraInfo, analysis);
+    let analysis = null;
+    let analysisStatus = 'ok';
+    let analysisError = null;
+    try {
+      analysis = await this.analyzeTranscription(content);
+    } catch (error) {
+      console.error('Erro ao chamar a API do Gemini para análise:', error);
+      analysisStatus = 'failed';
+      analysisError = error?.message || 'Falha ao analisar transcrição.';
+    }
+
+    if (analysisStatus === 'failed') {
+      return { success: false, fileName, message: analysisError };
+    }
+
+    const formatted = this.formatTranscriptionDocument(content, extraInfo, analysis || {});
+    await this.saveCombinedMetadata(
+      fileName,
+      formatted,
+      extraInfo,
+      analysis,
+      analysisStatus,
+      analysisError
+    );
 
     fs.writeFileSync(filePath, formatted, 'utf-8');
 

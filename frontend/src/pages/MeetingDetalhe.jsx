@@ -47,6 +47,7 @@ export default function MeetingDetalhe() {
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [scheduleMsg, setScheduleMsg] = useState(null);
   const [scheduleErr, setScheduleErr] = useState(null);
+  const [scheduleWarn, setScheduleWarn] = useState(null);
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -138,14 +139,22 @@ export default function MeetingDetalhe() {
     setScheduleSaving(true);
     setScheduleMsg(null);
     setScheduleErr(null);
+    setScheduleWarn(null);
     try {
-      await apiService.updateMeeting(meetingId, {
+      const res = await apiService.updateMeeting(meetingId, {
         scheduledDate: scheduleDate,
         scheduledTime: scheduleTime,
         duration: scheduleDuration,
         status: 'agendada',
       });
       setScheduleMsg('Sessão reagendada.');
+      if (res?.calendar?.success === false) {
+        setScheduleWarn(
+          res?.calendar?.message
+            ? `Sessão reagendada, mas não foi possível atualizar o evento no Google Calendar: ${res.calendar.message}`
+            : 'Sessão reagendada, mas não foi possível atualizar o evento no Google Calendar.'
+        );
+      }
       const updated = await apiService.getMeeting(meetingId);
       if (updated?.success && updated.data) {
         const m = updated.data?.data || updated.data;
@@ -168,6 +177,7 @@ export default function MeetingDetalhe() {
     setScheduleSaving(true);
     setScheduleMsg(null);
     setScheduleErr(null);
+    setScheduleWarn(null);
     try {
       await apiService.updateMeeting(meetingId, { status: 'cancelada' });
       setScheduleMsg('Sessão cancelada.');
@@ -375,6 +385,11 @@ export default function MeetingDetalhe() {
             {scheduleMsg && <span className="text-[11px] text-green-600">{scheduleMsg}</span>}
             {scheduleErr && <span className="text-[11px] text-red-600">{scheduleErr}</span>}
           </div>
+          {scheduleWarn && (
+            <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
+              {scheduleWarn}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm space-y-1">
               <span className="text-[11px] text-gray-600 uppercase">Data</span>

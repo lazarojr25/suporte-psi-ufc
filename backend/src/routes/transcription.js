@@ -60,8 +60,11 @@ const shouldReprocessEntry = (entry, force = false) => {
   const hasAnalysis = !!entry.analysis;
   const hasSummary = !!entry.analysis?.summary;
   const hasSentiments = !!entry.analysis?.sentiments;
+  const hasAnalysisError =
+    entry.analysisStatus === 'failed' ||
+    !!entry.analysisError;
   // Reprocessa apenas se faltam dados essenciais
-  return !hasAnalysis || !hasSummary || !hasSentiments;
+  return !hasAnalysis || !hasSummary || !hasSentiments || hasAnalysisError;
 };
 
 // Dispara um reprocessamento assíncrono das transcrições do discente
@@ -589,7 +592,26 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
     );
 
     if (!result.success) {
-      throw new Error(result.error || 'Falha ao processar transcrição.');
+      if (db && meetingId) {
+        try {
+          await db.collection('meetings').doc(meetingId).update({
+            status: 'erro_transcricao',
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.warn('Não foi possível atualizar meeting após falha de análise:', e?.message);
+        }
+      }
+
+      return res.status(200).json({
+        success: false,
+        message: result.error || 'Falha ao analisar transcrição.',
+        data: {
+          fileName: result.fileName || finalFileName,
+          analysisStatus: result.analysisStatus || 'failed',
+          analysisError: result.analysisError || result.error || null,
+        },
+      });
     }
 
     // Atualiza meeting se aplicável
@@ -618,6 +640,8 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
       data: {
         fileName: finalFileName,
         analysis: result.analysis,
+        analysisStatus: result.analysisStatus || 'ok',
+        analysisError: result.analysisError || null,
         metadata: result.metadata,
       },
     });

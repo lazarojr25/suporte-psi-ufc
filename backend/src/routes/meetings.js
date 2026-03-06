@@ -150,6 +150,7 @@ router.post('/', async (req, res) => {
     const docRef = await db.collection('meetings').add(newMeeting);
 
     // Cria link do Meet via Calendar (best-effort)
+    const calendarStatus = { success: true, message: null };
     try {
       const meetResp = await createMeetEvent({
         summary: `Atendimento - ${studentName}`,
@@ -166,9 +167,14 @@ router.post('/', async (req, res) => {
           meetLink: newMeeting.meetLink,
           calendarEventId: newMeeting.calendarEventId,
         });
+      } else {
+        calendarStatus.success = false;
+        calendarStatus.message = meetResp?.message || 'Não foi possível criar o evento no Google Calendar.';
       }
     } catch (calErr) {
       console.warn('Falha ao criar Meet para o meeting:', calErr?.message);
+      calendarStatus.success = false;
+      calendarStatus.message = calErr?.message || 'Não foi possível criar o evento no Google Calendar.';
     }
 
     // E-mail para o discente com o link do Meet (best-effort)
@@ -210,6 +216,7 @@ Se não foi você, ignore esta mensagem.`;
       success: true,
       message: 'Reunião agendada com sucesso',
       data: saved,
+      calendar: calendarStatus,
     });
   } catch (error) {
     console.error('Erro ao agendar reunião:', error);
@@ -472,6 +479,7 @@ router.put('/:id', async (req, res) => {
       (duration && duration !== current.duration);
 
     // Atualiza/gera Meet se houver alteração de agenda ou se ainda não existir link
+    const calendarStatus = { success: true, message: null };
     try {
       if (scheduleChanged || (!current.meetLink && (scheduledDate || scheduledTime))) {
         const calResp = await updateMeetEvent({
@@ -486,10 +494,15 @@ router.put('/:id', async (req, res) => {
         if (calResp?.success && (calResp.meetLink || calResp.eventId)) {
           updates.meetLink = calResp.meetLink || current.meetLink || null;
           updates.calendarEventId = calResp.eventId || current.calendarEventId || null;
+        } else {
+          calendarStatus.success = false;
+          calendarStatus.message = calResp?.message || 'Não foi possível atualizar o evento no Google Calendar.';
         }
       }
     } catch (calErr) {
       console.warn('Falha ao atualizar Meet do meeting:', calErr?.message);
+      calendarStatus.success = false;
+      calendarStatus.message = calErr?.message || 'Não foi possível atualizar o evento no Google Calendar.';
     }
 
     await docRef.update(updates);
@@ -524,6 +537,7 @@ Se não foi você, ignore esta mensagem.`;
       success: true,
       message: 'Reunião atualizada com sucesso',
       data: updatedData,
+      calendar: calendarStatus,
     });
   } catch (error) {
     console.error('Erro ao atualizar reunião:', error);
