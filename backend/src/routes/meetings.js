@@ -1,22 +1,16 @@
 import express from 'express';
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAdminDb } from '../firebaseAdmin.js';
+import { createMeetEvent, updateMeetEvent } from '../services/calendarService.js';
+import { sendMeetingEmail } from '../services/gmailService.js';
 
 const router = express.Router();
 
 // --------- Firebase Admin / Firestore ---------
 let db;
 try {
-  initializeApp({
-    credential: applicationDefault(),
-  });
-  db = getFirestore();
+  db = getAdminDb();
 } catch (error) {
-  if (/already exists/u.test(error.message)) {
-    db = getFirestore();
-  } else {
-    console.error('Erro ao inicializar Firebase Admin:', error);
-  }
+  console.error('Erro ao inicializar Firebase Admin:', error);
 }
 
 // --------- helpers ---------
@@ -26,6 +20,12 @@ function mapMeetingDoc(doc) {
     ...doc.data(),
   };
 }
+
+const toDateTime = (date, time) => {
+  if (!date || !time) return null;
+  const dt = new Date(`${date}T${time}:00`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
 
 // GET /api/meetings - Listar reuniões (com filtros opcionais)
 router.get('/', async (req, res) => {
@@ -77,7 +77,7 @@ router.post('/', async (req, res) => {
       studentEmail,
       scheduledDate,
       scheduledTime,
-      duration = 60,
+      duration = 45,
       notes,
       discenteId,
       curso,
@@ -98,6 +98,19 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Checa status da solicitação e bloqueia duplicidade
+    const solicitacaoRef = db.collection('solicitacoesAtendimento').doc(solicitacaoId);
+    const solicitacaoSnap = await solicitacaoRef.get();
+    if (solicitacaoSnap.exists) {
+      const statusRaw = (solicitacaoSnap.data()?.status || '').toString().toLowerCase();
+      if (statusRaw.includes('encontro agendado')) {
+        return res.status(409).json({
+          success: false,
+          message: 'Esta solicitação já possui um encontro agendado.',
+        });
+      }
+    }
+
     // Verificar se já existe reunião para esta solicitação
     const existingSnap = await db
       .collection('meetings')
@@ -112,9 +125,8 @@ router.post('/', async (req, res) => {
     }
 
     const nowIso = new Date().toISOString();
-    const dateTimeIso = new Date(
-      `${scheduledDate}T${scheduledTime}:00`
-    ).toISOString();
+    const dateObj = toDateTime(scheduledDate, scheduledTime);
+    const dateTimeIso = dateObj ? dateObj.toISOString() : null;
 
     const newMeeting = {
       solicitacaoId,
@@ -130,17 +142,81 @@ router.post('/', async (req, res) => {
       createdAt: nowIso,
       dateTime: dateTimeIso,
       meetLink: null,
+      calendarEventId: null,
       transcriptionId: null,
+      clinicalRecord: null,
     };
 
     const docRef = await db.collection('meetings').add(newMeeting);
 
+    // Cria link do Meet via Calendar (best-effort)
+    const calendarStatus = { success: true, message: null };
+    try {
+      const meetResp = await createMeetEvent({
+        summary: `Atendimento - ${studentName}`,
+        description: notes || '',
+        date: scheduledDate,
+        time: scheduledTime,
+        durationMinutes: duration,
+        attendeeEmail: studentEmail,
+      });
+      if (meetResp?.success && (meetResp.meetLink || meetResp.eventId)) {
+        newMeeting.meetLink = meetResp.meetLink || null;
+        newMeeting.calendarEventId = meetResp.eventId || null;
+        await docRef.update({
+          meetLink: newMeeting.meetLink,
+          calendarEventId: newMeeting.calendarEventId,
+        });
+      } else {
+        calendarStatus.success = false;
+        calendarStatus.message = meetResp?.message || 'Não foi possível criar o evento no Google Calendar.';
+      }
+    } catch (calErr) {
+      console.warn('Falha ao criar Meet para o meeting:', calErr?.message);
+      calendarStatus.success = false;
+      calendarStatus.message = calErr?.message || 'Não foi possível criar o evento no Google Calendar.';
+    }
+
+    // E-mail para o discente com o link do Meet (best-effort)
+    try {
+      if (studentEmail && newMeeting.meetLink) {
+        const text = `Olá ${studentName || ''},
+
+Sua sessão está agendada para ${scheduledDate} às ${scheduledTime}.
+Link para o encontro: ${newMeeting.meetLink}
+
+Se não foi você, ignore esta mensagem.`;
+        await sendMeetingEmail({
+          to: studentEmail,
+          subject: 'Sessão agendada - link do encontro',
+          text,
+          html: `<p>Olá ${studentName || ''},</p>
+<p>Sua sessão está agendada para <strong>${scheduledDate}</strong> às <strong>${scheduledTime}</strong>.</p>
+<p>Link para o encontro: <a href="${newMeeting.meetLink}">${newMeeting.meetLink}</a></p>
+<p>Se não foi você, ignore esta mensagem.</p>`,
+        });
+      }
+    } catch (mailErr) {
+      console.warn('Falha ao enviar e-mail do meeting:', mailErr?.message);
+    }
+
     const saved = { id: docRef.id, ...newMeeting };
+
+    // Atualiza status da solicitação para "encontro agendado" (best-effort)
+    try {
+      await solicitacaoRef.set(
+        { status: 'encontro agendado', updatedAt: nowIso },
+        { merge: true }
+      );
+    } catch (sErr) {
+      console.warn('Falha ao atualizar status da solicitação após criar meeting:', sErr?.message);
+    }
 
     res.status(201).json({
       success: true,
       message: 'Reunião agendada com sucesso',
       data: saved,
+      calendar: calendarStatus,
     });
   } catch (error) {
     console.error('Erro ao agendar reunião:', error);
@@ -156,12 +232,18 @@ router.post('/', async (req, res) => {
 router.get('/available-slots/:date', async (req, res) => {
   try {
     const { date } = req.params;
+    const slotDuration = 45; // minutos
 
-    // Horários de funcionamento (9h às 17h, de 30 em 30)
+    // Gera slots de 45 min entre 09:00 e 17:00, garantindo término antes das 17h
     const workingHours = [];
-    for (let hour = 9; hour < 17; hour++) {
-      workingHours.push(`${hour.toString().padStart(2, '0')}:00`);
-      workingHours.push(`${hour.toString().padStart(2, '0')}:30`);
+    const startMinutes = 9 * 60;
+    const endMinutes = 17 * 60;
+    for (let minutes = startMinutes; minutes <= endMinutes - slotDuration; minutes += slotDuration) {
+      const hours = Math.floor(minutes / 60)
+        .toString()
+        .padStart(2, '0');
+      const mins = (minutes % 60).toString().padStart(2, '0');
+      workingHours.push(`${hours}:${mins}`);
     }
 
     // Busca reuniões já agendadas para essa data
@@ -174,11 +256,28 @@ router.get('/available-slots/:date', async (req, res) => {
       .map((doc) => doc.data())
       .filter((m) => m.status !== 'cancelada');
 
+    // Auxiliares para evitar sobreposição
+    const toMinutes = (timeStr) => {
+      if (!timeStr) return null;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const overlaps = (candidateStart, candidateDur, existingStart, existingDur) => {
+      if (candidateStart === null || existingStart === null) return false;
+      const candidateEnd = candidateStart + candidateDur;
+      const existingEnd = existingStart + (existingDur || slotDuration);
+      return candidateStart < existingEnd && existingStart < candidateEnd;
+    };
+
     const occupiedSlots = occupiedDocs.map((m) => m.scheduledTime);
 
-    const availableSlots = workingHours.filter(
-      (slot) => !occupiedSlots.includes(slot)
-    );
+    const availableSlots = workingHours.filter((slot) => {
+      const candidateStart = toMinutes(slot);
+      return !occupiedDocs.some((m) =>
+        overlaps(candidateStart, slotDuration, toMinutes(m.scheduledTime), m.duration || slotDuration)
+      );
+    });
 
     res.json({
       success: true,
@@ -353,7 +452,12 @@ router.put('/:id', async (req, res) => {
       notes,
       status,
       meetLink,
+      completionNotes,
+      informalNotes,
+      clinicalRecord,
     } = req.body;
+
+    const current = snap.data() || {};
 
     const updates = {
       updatedAt: new Date().toISOString(),
@@ -365,15 +469,75 @@ router.put('/:id', async (req, res) => {
     if (notes !== undefined) updates.notes = notes;
     if (status) updates.status = status;
     if (meetLink) updates.meetLink = meetLink;
+    if (completionNotes !== undefined) updates.completionNotes = completionNotes;
+    if (informalNotes !== undefined) updates.informalNotes = informalNotes;
+    if (clinicalRecord !== undefined) updates.clinicalRecord = clinicalRecord;
+
+    const scheduleChanged =
+      (scheduledDate && scheduledDate !== current.scheduledDate) ||
+      (scheduledTime && scheduledTime !== current.scheduledTime) ||
+      (duration && duration !== current.duration);
+
+    // Atualiza/gera Meet se houver alteração de agenda ou se ainda não existir link
+    const calendarStatus = { success: true, message: null };
+    try {
+      if (scheduleChanged || (!current.meetLink && (scheduledDate || scheduledTime))) {
+        const calResp = await updateMeetEvent({
+          eventId: current.calendarEventId,
+          summary: `Atendimento - ${current.studentName || 'Discente'}`,
+          description: updates.notes ?? current.notes ?? '',
+          date: scheduledDate || current.scheduledDate,
+          time: scheduledTime || current.scheduledTime,
+          durationMinutes: duration || current.duration || 45,
+          attendeeEmail: current.studentEmail,
+        });
+        if (calResp?.success && (calResp.meetLink || calResp.eventId)) {
+          updates.meetLink = calResp.meetLink || current.meetLink || null;
+          updates.calendarEventId = calResp.eventId || current.calendarEventId || null;
+        } else {
+          calendarStatus.success = false;
+          calendarStatus.message = calResp?.message || 'Não foi possível atualizar o evento no Google Calendar.';
+        }
+      }
+    } catch (calErr) {
+      console.warn('Falha ao atualizar Meet do meeting:', calErr?.message);
+      calendarStatus.success = false;
+      calendarStatus.message = calErr?.message || 'Não foi possível atualizar o evento no Google Calendar.';
+    }
 
     await docRef.update(updates);
 
     const updatedSnap = await docRef.get();
+    const updatedData = mapMeetingDoc(updatedSnap);
+
+    // E-mail para o discente com o link atualizado (best-effort)
+    try {
+      if (updatedData.studentEmail && updatedData.meetLink && scheduleChanged) {
+        const text = `Olá ${updatedData.studentName || ''},
+
+Sua sessão foi agendada/atualizada para ${updatedData.scheduledDate} às ${updatedData.scheduledTime}.
+Link para o encontro: ${updatedData.meetLink}
+
+Se não foi você, ignore esta mensagem.`;
+        await sendMeetingEmail({
+          to: updatedData.studentEmail,
+          subject: 'Sessão agendada/atualizada - link do encontro',
+          text,
+          html: `<p>Olá ${updatedData.studentName || ''},</p>
+<p>Sua sessão foi agendada/atualizada para <strong>${updatedData.scheduledDate}</strong> às <strong>${updatedData.scheduledTime}</strong>.</p>
+<p>Link para o encontro: <a href="${updatedData.meetLink}">${updatedData.meetLink}</a></p>
+<p>Se não foi você, ignore esta mensagem.</p>`,
+        });
+      }
+    } catch (mailErr) {
+      console.warn('Falha ao enviar e-mail do meeting (update):', mailErr?.message);
+    }
 
     res.json({
       success: true,
       message: 'Reunião atualizada com sucesso',
-      data: mapMeetingDoc(updatedSnap),
+      data: updatedData,
+      calendar: calendarStatus,
     });
   } catch (error) {
     console.error('Erro ao atualizar reunião:', error);

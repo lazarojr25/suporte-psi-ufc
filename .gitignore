@@ -26,9 +26,12 @@ backend/.env
 backend/.env.local
 backend/.env.development
 backend/.env.production
+backend/get-gmail-refresh-token.js
 
 # Credenciais Firebase 
 *firebase-adminsdk*.json
+backend/**/service-account*.json
+backend/**/sa-*.json
 
 # Pastas de trabalho / runtime (não versionar)
 backend/uploads/

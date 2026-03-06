@@ -1,9 +1,21 @@
+import { auth } from './firebase';
 // Serviço para comunicação com o backend Node.js
 const API_BASE_URL = 'http://localhost:5001/api';
 
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
+  }
+
+  async getAuthToken() {
+    const user = auth.currentUser;
+    if (!user) return null;
+    try {
+      return await user.getIdToken();
+    } catch (e) {
+      console.warn('Falha ao obter ID token:', e?.message);
+      return null;
+    }
   }
 
   // Método genérico para fazer requisições
@@ -19,6 +31,12 @@ class ApiService {
     };
     if (!isFormData && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // Anexa token de auth, exceto se explicitamente ignorado
+    const token = options.skipAuth ? null : await this.getAuthToken();
+    if (!options.skipAuth && token) {
+      headers.Authorization = `Bearer ${token}`;
     }
 
     const config = {
@@ -124,6 +142,21 @@ class ApiService {
     });
   }
 
+  async uploadTranscriptText(file, extraMeta = {}) {
+    const formData = new FormData();
+    formData.append('transcript', file);
+    Object.entries(extraMeta).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        formData.append(key, value);
+      }
+    });
+
+    return this.request('/transcription/upload-text', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   // --- Transcrições por discente ---
   async getTranscriptionsByDiscente(discenteId) {
     return this.request(`/transcription/by-discente/${discenteId}`);
@@ -171,7 +204,9 @@ class ApiService {
   }
 
   async exportReportsOverview() {
-    const res = await fetch(`${this.baseURL}/reports/overview/export`);
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/overview/export`, { headers });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const contentDisposition = res.headers.get('content-disposition') || '';
     let fileName = null;
@@ -184,7 +219,43 @@ class ApiService {
   }
 
   async exportReportsOverviewPdf() {
-    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf`);
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf`, { headers });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    let fileName = null;
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+    const blob = await res.blob();
+    return { blob, fileName };
+  }
+
+  async exportReportByDiscente(discenteId) {
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/by-discente/${discenteId}/export`, {
+      headers,
+    });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    let fileName = null;
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+    const blob = await res.blob();
+    return { blob, fileName };
+  }
+
+  async exportReportByDiscentePdf(discenteId) {
+    const token = await this.getAuthToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${this.baseURL}/reports/by-discente/${discenteId}/export-pdf`, {
+      headers,
+    });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const contentDisposition = res.headers.get('content-disposition') || '';
     let fileName = null;
@@ -201,6 +272,27 @@ class ApiService {
     return this.request('/health');
   }
   
+  // ------------------ Usuários (Admin SDK) ------------------
+  async createUserAdmin(payload) {
+    return this.request('/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async reprocessAllTranscriptions(discenteId, { force = true } = {}) {
+    return this.request('/transcription/reprocess-all', {
+      method: 'POST',
+      body: JSON.stringify({ discenteId, force }),
+    });
+  }
+
+  async deleteTranscription(fileName) {
+    return this.request(`/transcription/${fileName}`, {
+      method: 'DELETE',
+    });
+  }
+
   // ------------------ Limite de sessões ------------------
 
   async canScheduleForDiscente(discenteId) {

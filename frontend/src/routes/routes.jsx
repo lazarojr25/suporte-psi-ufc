@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 // públicas
 import Solicitacao from '../pages/Solicitacao';
-import PosSolicitacao from '../pages/PosSolicitacao';
 import Login from '../pages/Login';
 
 // privadas
@@ -14,9 +13,12 @@ import GerenciarSolicitacoes from '../pages/GerenciarSolicitacoes';
 import DiscenteDetalhe from '../pages/DiscenteDetalhe';
 import ListaDiscentes from '../pages/ListaDiscentes';
 import CadastroFuncionario from '../pages/CadastroFuncionario';
-import UploadTranscricao from '../pages/UploadTranscricao';
-import ConfigAtendimentos from '../pages/ConfigAtendimentos';
+import Configuracoes from '../pages/Configuracoes';
 import Agenda from '../pages/Agenda';
+import MeetingDetalhe from '../pages/MeetingDetalhe';
+import SolicitacaoDetalhe from '../pages/SolicitacaoDetalhe';
+import Usuarios from '../pages/Usuarios';
+import Sessoes from '../pages/Sessoes';
 
 // layout privado
 import PrivateLayout from '../layouts/PrivateLayout';
@@ -27,7 +29,6 @@ export default function AppRoutes() {
       <Routes>
         {/* ROTAS PÚBLICAS */}
         <Route path="/" element={<Solicitacao />} />
-        <Route path="/obrigado" element={<PosSolicitacao />} />
         <Route path="/login" element={<Login />} />
 
         {/* ROTAS PRIVADAS (só depois de login, via PrivateLayout) */}
@@ -38,11 +39,14 @@ export default function AppRoutes() {
           <Route path="/agendar-atendimento/:solicitacaoId" element={<AgendarAtendimento />} />
           <Route path="/discentes" element={<ListaDiscentes />} />
           <Route path="/discentes/:discenteId" element={<DiscenteDetalhe />} />
+          <Route path="/solicitacoes/:solicitacaoId" element={<SolicitacaoDetalhe />} />
+          <Route path="/meetings/:meetingId" element={<MeetingDetalhe />} />
+          <Route path="/sessoes" element={<Sessoes />} />
           <Route path="/gerenciar-solicitacoes" element={<GerenciarSolicitacoes />} />
           <Route path="/cadastro" element={<CadastroFuncionario />} />
-          <Route path="/upload-transcricao" element={<UploadTranscricao />} />
-          <Route path="/config-atendimentos" element={<ConfigAtendimentos />} /> 
+          <Route path="/configuracoes" element={<Configuracoes />} /> 
           <Route path="/agenda" element={<Agenda />} />
+          <Route path="/usuarios" element={<Usuarios />} />
         </Route>
 
         {/* fallback pra qualquer rota desconhecida */}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -11,7 +12,27 @@ const parseDate = (value) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+const normalizeSolicitacaoStatus = (status) =>
+  (status || '').toString().trim().toLowerCase();
+
+const isSolicitacaoAgendada = (status) => {
+  const normalized = normalizeSolicitacaoStatus(status);
+  return normalized.includes('agend');
+};
+
+const isSolicitacaoPendente = (status) => {
+  const normalized = normalizeSolicitacaoStatus(status);
+  if (!normalized) return true;
+  return normalized.includes('pend') || normalized === 'nova';
+};
+
+const shouldShowSolicitacaoInAgenda = (status) => {
+  if (isSolicitacaoAgendada(status)) return false;
+  return isSolicitacaoPendente(status);
+};
+
 export default function Agenda() {
+  const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()));
   const [meetings, setMeetings] = useState([]);
@@ -19,10 +40,8 @@ export default function Agenda() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
-  const [uploadSuccess, setUploadSuccess] = useState(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     loadData();
@@ -86,12 +105,18 @@ export default function Agenda() {
 
   const eventsByDay = useMemo(() => {
     const map = {};
+    const ensureDay = (key) => {
+      if (!map[key]) {
+        map[key] = { meetings: [], solicitacoesPendentes: [] };
+      }
+      return map[key];
+    };
 
     meetings.forEach((m) => {
       const key = m.scheduledDate || (m.dateTime && dateKey(new Date(m.dateTime)));
       if (!key) return;
-      if (!map[key]) map[key] = [];
-      map[key].push({
+      const day = ensureDay(key);
+      day.meetings.push({
         type: 'meeting',
         id: m.id,
         title: m.studentName || 'Sessão',
@@ -110,8 +135,9 @@ export default function Agenda() {
     solicitacoes.forEach((s) => {
       const key = s.createdAt ? dateKey(s.createdAt) : null;
       if (!key) return;
-      if (!map[key]) map[key] = [];
-      map[key].push({
+      if (!shouldShowSolicitacaoInAgenda(s.status)) return;
+      const day = ensureDay(key);
+      day.solicitacoesPendentes.push({
         type: 'solicitacao',
         id: s.id,
         title: s.motivation || 'Solicitação',
@@ -126,17 +152,40 @@ export default function Agenda() {
     return map;
   }, [meetings, solicitacoes]);
 
-  const selectedEvents = eventsByDay[selectedDate] || [];
+  const emptyDayEvents = { meetings: [], solicitacoesPendentes: [] };
+  const selectedDayEvents = eventsByDay[selectedDate] || emptyDayEvents;
+  const selectedEvents = [
+    ...selectedDayEvents.meetings,
+    ...selectedDayEvents.solicitacoesPendentes,
+  ];
+
+  const statusOptions = useMemo(() => {
+    const set = new Set();
+    meetings.forEach((m) => m.status && set.add(m.status));
+    solicitacoes.forEach((s) => {
+      if (!shouldShowSolicitacaoInAgenda(s.status)) return;
+      if (s.status) set.add(s.status);
+    });
+    return ['all', ...Array.from(set)];
+  }, [meetings, solicitacoes]);
+
+  const filteredEvents = useMemo(() => {
+    return selectedEvents.filter((evt) => {
+      const matchType = typeFilter === 'all' || evt.type === typeFilter;
+      const matchStatus = statusFilter === 'all' || evt.status === statusFilter;
+      return matchType && matchStatus;
+    });
+  }, [selectedEvents, typeFilter, statusFilter]);
 
   useEffect(() => {
-    if (selectedEvents.length > 0) {
+    if (filteredEvents.length > 0) {
       // Prioriza meetings
-      const meeting = selectedEvents.find((e) => e.type === 'meeting');
-      setSelectedEvent(meeting || selectedEvents[0]);
+      const meeting = filteredEvents.find((e) => e.type === 'meeting');
+      setSelectedEvent(meeting || filteredEvents[0]);
     } else {
       setSelectedEvent(null);
     }
-  }, [selectedDate, selectedEvents]);
+  }, [filteredEvents]);
 
   const changeMonth = (delta) => {
     const d = new Date(currentMonth);
@@ -155,46 +204,6 @@ export default function Agenda() {
       .sort((a, b) => a._dateObj - b._dateObj)
       .slice(0, 5);
   }, [meetings]);
-
-  const handleUpload = async () => {
-    if (!selectedEvent || selectedEvent.type !== 'meeting' || !selectedFile) return;
-    setUploading(true);
-    setUploadError(null);
-    setUploadSuccess(null);
-    try {
-      const meeting = selectedEvent.raw || {};
-      const sessionDate =
-        meeting.scheduledDate ||
-        (meeting.dateTime ? new Date(meeting.dateTime).toISOString().slice(0, 10) : null) ||
-        new Date().toISOString().slice(0, 10);
-
-      await apiService.uploadMedia(selectedFile, {
-        meetingId: meeting.id,
-        solicitacaoId: meeting.solicitacaoId || '',
-        discenteId: meeting.discenteId || '',
-        studentName: meeting.studentName || '',
-        studentEmail: meeting.studentEmail || '',
-        studentId: meeting.studentId || '',
-        curso: meeting.curso || '',
-        sessionDate,
-      });
-
-      try {
-        await apiService.updateMeeting(meeting.id, { status: 'concluida' });
-      } catch (e) {
-        console.warn('Falha ao atualizar status do meeting:', e);
-      }
-
-      setUploadSuccess('Transcrição enviada e sessão concluída.');
-      setSelectedFile(null);
-      await loadData();
-    } catch (err) {
-      console.error(err);
-      setUploadError('Não foi possível enviar a transcrição.');
-    } finally {
-      setUploading(false);
-    }
-  };
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-6">
@@ -244,7 +253,10 @@ export default function Agenda() {
               const key = dateKey(day);
               const inMonth = day.getMonth() === currentMonth.getMonth();
               const isToday = key === dateKey(new Date());
-              const hasEvents = (eventsByDay[key] || []).length > 0;
+              const dayEvents = eventsByDay[key] || emptyDayEvents;
+              const pendingCount = dayEvents.solicitacoesPendentes.length;
+              const meetingsCount = dayEvents.meetings.length;
+              const hasEvents = pendingCount + meetingsCount > 0;
               return (
                 <button
                   type="button"
@@ -252,7 +264,9 @@ export default function Agenda() {
                   onClick={() => setSelectedDate(key)}
                   className={`h-24 rounded-lg border flex flex-col items-start p-2 text-left transition ${
                     inMonth ? 'bg-white' : 'bg-gray-50'
-                  } ${selectedDate === key ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'}`}
+                  } ${isToday ? 'border-blue-300 bg-blue-50' : ''} ${
+                    selectedDate === key ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'
+                  }`}
                 >
                   <span
                     className={`text-sm font-semibold ${
@@ -262,10 +276,17 @@ export default function Agenda() {
                     {day.getDate()}
                   </span>
                   {hasEvents && (
-                    <div className="mt-2 w-full">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold">
-                        {(eventsByDay[key] || []).length} eventos
-                      </span>
+                    <div className="mt-2 w-full flex flex-col gap-1">
+                      {pendingCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-semibold">
+                          {pendingCount} solicitação{pendingCount > 1 ? 's' : ''} pendente{pendingCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {meetingsCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-800 text-[11px] font-semibold">
+                          {meetingsCount} encontro{meetingsCount > 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
                   )}
                 </button>
@@ -275,15 +296,41 @@ export default function Agenda() {
         </div>
 
         <div className="bg-white rounded-xl shadow p-4 space-y-3">
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs uppercase text-gray-500">Dia selecionado</p>
               <p className="text-lg font-semibold text-gray-900">
                 {selectedDate.split('-').reverse().join('/')}
               </p>
               <p className="text-xs text-gray-500">
-                {(eventsByDay[selectedDate] || []).length} eventos
+                {selectedDayEvents.solicitacoesPendentes.length} solicitação
+                {selectedDayEvents.solicitacoesPendentes.length === 1 ? '' : 's'} pendente
+                {selectedDayEvents.solicitacoesPendentes.length === 1 ? '' : 's'} •{' '}
+                {selectedDayEvents.meetings.length} encontro
+                {selectedDayEvents.meetings.length === 1 ? '' : 's'}
               </p>
+            </div>
+            <div className="flex flex-col gap-2 text-xs w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="border rounded-md px-2 py-1 text-xs w-full sm:w-auto"
+              >
+                <option value="all">Todos os tipos</option>
+                <option value="meeting">Sessões</option>
+                <option value="solicitacao">Solicitações</option>
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border rounded-md px-2 py-1 text-xs w-full sm:w-auto"
+              >
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status === 'all' ? 'Todos os status' : status}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -291,9 +338,13 @@ export default function Agenda() {
             <p className="text-sm text-gray-500">
               Nenhum evento para esta data.
             </p>
+          ) : filteredEvents.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Nenhum evento corresponde aos filtros.
+            </p>
           ) : (
             <div className="grid grid-cols-1 gap-2 max-h-[420px] overflow-y-auto pr-1">
-              {selectedEvents.map((evt) => (
+              {filteredEvents.map((evt) => (
                 <div
                   key={`${evt.type}-${evt.id}`}
                   className={`border rounded-lg p-3 bg-gray-50 flex flex-col gap-1 cursor-pointer ${selectedEvent?.id === evt.id ? 'ring-2 ring-blue-200 border-blue-400' : ''}`}
@@ -357,42 +408,67 @@ export default function Agenda() {
                 )}
 
                 {selectedEvent.type === 'meeting' ? (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xs uppercase text-gray-500">
-                      Enviar transcrição desta sessão
+                  <div className="mt-3 space-y-3">
+                    <p className="text-xs text-gray-500">
+                      Abra a sessão para registrar prontuário, notas e transcrição.
                     </p>
-                    {uploadError && (
-                      <p className="text-xs text-red-600">{uploadError}</p>
-                    )}
-                    {uploadSuccess && (
-                      <p className="text-xs text-green-600">{uploadSuccess}</p>
-                    )}
-                    <input
-                      type="file"
-                      accept="audio/*,video/*"
-                      onChange={(e) => setSelectedFile(e.target.files[0] || null)}
-                      className="text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleUpload}
-                      disabled={uploading || !selectedFile}
-                      className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {uploading ? 'Enviando...' : 'Enviar transcrição e concluir sessão'}
-                    </button>
-                    <p className="text-[11px] text-gray-500">
-                      O arquivo será vinculado ao meeting e o status será marcado como concluído.
-                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/meetings/${selectedEvent.id}`)}
+                        className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                      >
+                        Abrir sessão
+                      </button>
+                      {selectedEvent.solicitacaoId && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/solicitacoes/${selectedEvent.solicitacaoId}`)}
+                          className="px-3 py-2 rounded-md border text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Ver solicitação vinculada
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ) : (
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 space-y-3">
                     <p className="text-xs text-gray-500">
-                      Solicitação pendente ou sem sessão vinculada. Agende uma reunião para habilitar o envio de transcrição.
+                      Abra a solicitação para revisar dados e registrar uma sessão.
                     </p>
-                    <p className="text-[11px] text-gray-500">
-                      Use o fluxo de agendamento para criar um meeting e, em seguida, selecione-o aqui para anexar a transcrição.
-                    </p>
+                    {selectedEvent.status &&
+                      selectedEvent.status
+                        .toString()
+                        .toLowerCase()
+                        .includes('encontro agendado') && (
+                        <p className="text-xs text-amber-700">
+                          Esta solicitação já possui um encontro agendado.
+                        </p>
+                      )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/solicitacoes/${selectedEvent.id}`)}
+                        className="px-3 py-2 rounded-md bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700"
+                      >
+                        Ver solicitação
+                      </button>
+                      {!(
+                        selectedEvent.status &&
+                        selectedEvent.status
+                          .toString()
+                          .toLowerCase()
+                          .includes('encontro agendado')
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/agendar-atendimento/${selectedEvent.id}`)}
+                          className="px-3 py-2 rounded-md border text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Agendar sessão
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

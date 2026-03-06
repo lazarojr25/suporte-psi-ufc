@@ -29,12 +29,19 @@ export default function Solicitacao() {
   const [curso, setCurso] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const navigate = useNavigate();
 
   const STATUS = {
     SOLICITADA: 'Pendente',
     AGENDADA: 'Agendada',
+  };
+
+  const allowedEmailDomains = ['@alu.ufc.br', '@ufc.br'];
+  const isInstitutionalEmail = (value) => {
+    const normalized = (value || '').trim().toLowerCase();
+    return allowedEmailDomains.some((domain) => normalized.endsWith(domain));
   };
 
   const getOrCreateDiscente = async () => {
@@ -69,6 +76,10 @@ export default function Solicitacao() {
       setError('Por favor, preencha todos os campos.');
       return;
     }
+    if (!isInstitutionalEmail(email)) {
+      setError('Use seu e-mail institucional (@ufc.br ou @quixada.ufc.br).');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -86,7 +97,12 @@ export default function Solicitacao() {
         curso,
       });
 
-      navigate('/obrigado');
+      setShowSuccessModal(true);
+      setName('');
+      setEmail('');
+      setStudentId('');
+      setMotivation('');
+      setCurso('');
     } catch (err) {
       console.error(err);
       setError('Erro ao enviar solicitação. Tente novamente.');
@@ -286,6 +302,35 @@ export default function Solicitacao() {
           </div>
         </div>
       </footer>
+
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Solicitação enviada</p>
+              <h3 className="text-xl font-semibold text-gray-900">
+                Recebemos seus dados
+              </h3>
+              <p className="text-sm text-gray-700">
+                Vamos revisar sua solicitação e retornar pelo seu e-mail institucional.
+                Fique atento à caixa de entrada e ao spam.
+              </p>
+            </div>
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800">
+              Use apenas seu e-mail institucional para garantir o recebimento das orientações.
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
