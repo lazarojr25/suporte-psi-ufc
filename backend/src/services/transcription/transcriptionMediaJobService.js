@@ -1,0 +1,305 @@
+import path from 'path';
+import fs from 'fs';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
+
+import {
+  buildTranscriptBaseName,
+  removeDir,
+  removeIfExists,
+  shouldReprocessEntry,
+  toSafeBase,
+} from './transcriptionHelpers.js';
+
+ffmpeg.setFfmpegPath(ffmpegStatic);
+ffmpeg.setFfprobePath(ffprobeStatic.path);
+
+const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos por etapa
+const SEGMENT_THRESHOLD_MB = 90;
+const SEGMENT_SECONDS = 600; // 10 min
+
+const withTimeout = (command, reject) => {
+  const timer = setTimeout(() => {
+    try {
+      command.kill('SIGKILL');
+    } catch (e) {}
+    reject(new Error('Tempo limite excedido ao processar mídia.'));
+  }, FFMPEG_TIMEOUT_MS);
+
+  command.on('end', () => clearTimeout(timer));
+  command.on('error', () => clearTimeout(timer));
+};
+
+class TranscriptionMediaJobService {
+  constructor(transcriptionService, { workDirectory = process.cwd() } = {}) {
+    this.transcriptionService = transcriptionService;
+    this.workDirectory = workDirectory;
+    this.reprocessInFlight = false;
+    this.reprocessLocks = new Set();
+  }
+
+  _safeUpdateMeeting(updateMeetingSafe, meetingId, payload) {
+    if (!updateMeetingSafe || !meetingId) return;
+    return updateMeetingSafe(meetingId, payload).catch(() => {});
+  }
+
+  async _convertToWav16kMono(inputPath, outDir, baseName) {
+    return new Promise((resolve, reject) => {
+      const outPath = path.join(outDir, `${toSafeBase(baseName)}.wav`);
+
+      const command = ffmpeg(inputPath)
+        .outputOptions(['-ac', '1', '-ar', '16000', '-f', 'wav', '-acodec', 'pcm_s16le'])
+        .on('error', reject)
+        .on('end', () => resolve(outPath))
+        .save(outPath);
+
+      withTimeout(command, reject);
+    });
+  }
+
+  async _segmentWav(wavPath, outDir) {
+    return new Promise((resolve, reject) => {
+      const pattern = path.join(outDir, 'part-%03d.wav');
+      fs.mkdirSync(outDir, { recursive: true });
+
+      const command = ffmpeg(wavPath)
+        .outputOptions(['-f', 'segment', `-segment_time`, `${SEGMENT_SECONDS}`, '-c', 'copy'])
+        .on('error', reject)
+        .on('end', () => {
+          const parts = fs
+            .readdirSync(outDir)
+            .filter((f) => f.startsWith('part-') && f.endsWith('.wav'))
+            .map((f) => path.join(outDir, f))
+            .sort();
+          resolve(parts);
+        })
+        .save(pattern);
+
+      withTimeout(command, reject);
+    });
+  }
+
+  async triggerDiscenteReprocess(discenteId, { force = false } = {}) {
+    if (!discenteId) return;
+    if (this.reprocessLocks.has(discenteId) || this.reprocessInFlight) {
+      console.log(`[reprocess] Ignorando (já em andamento) para discente ${discenteId}`);
+      return;
+    }
+
+    this.reprocessLocks.add(discenteId);
+    try {
+      const list = await this.transcriptionService.listTranscriptionsWithMetadata();
+      const filtered = list.filter(
+        (t) => t.metadata?.discenteId === discenteId && shouldReprocessEntry(t, force),
+      );
+
+      for (const item of filtered) {
+        await this.transcriptionService.reprocessTranscription(item.fileName);
+      }
+
+      console.log(
+        `[reprocess] Finalizado para discente ${discenteId} (${filtered.length} transcrições)`,
+      );
+    } catch (err) {
+      console.error(
+        `[reprocess] Falha ao reprocessar discente ${discenteId}:`,
+        err?.message,
+      );
+    } finally {
+      this.reprocessLocks.delete(discenteId);
+    }
+  }
+
+  async processMediaJob({ filePath, fileName, extraInfo, jobId, updateMeetingSafe }) {
+    let workDir = null;
+    let segDir = null;
+    const originalPath = filePath;
+    const baseName = path.basename(fileName, path.extname(fileName));
+
+    try {
+      workDir = path.join(this.workDirectory, 'work', baseName);
+      segDir = path.join(workDir, 'segments');
+      fs.mkdirSync(workDir, { recursive: true });
+      console.log(`[transcription-job ${jobId}] Iniciando processamento de ${fileName}`);
+
+      this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
+        status: 'em_processamento',
+        updatedAt: new Date().toISOString(),
+      });
+
+      const wavPath = await this._convertToWav16kMono(originalPath, workDir, baseName);
+      const wavStats = fs.statSync(wavPath);
+      const wavSizeMB = wavStats.size / (1024 * 1024);
+
+      let mergedText;
+      let analysis = null;
+      let finalMetadata = null;
+      let finalFile;
+      let partResults = [];
+
+      const finalBaseName = buildTranscriptBaseName(extraInfo, toSafeBase(baseName));
+      const finalFileName = `${finalBaseName}.txt`;
+
+      if (wavSizeMB <= SEGMENT_THRESHOLD_MB) {
+        console.log(
+          `[transcription-job ${jobId}] Arquivo com ${wavSizeMB.toFixed(
+            2,
+          )}MB, transcrevendo sem segmentação...`,
+        );
+
+        const result = await this.transcriptionService.transcribeAudio(
+          wavPath,
+          finalFileName,
+          extraInfo,
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || 'Falha na transcrição do áudio.');
+        }
+
+        mergedText = result.transcription;
+        analysis = result.analysis;
+        finalMetadata = result.metadata;
+        finalFile = result.fileName;
+        partResults = [];
+      } else {
+        console.log(
+          `[transcription-job ${jobId}] Arquivo com ${wavSizeMB.toFixed(
+            2,
+          )}MB, segmentando em partes para transcrição...`,
+        );
+
+        const parts = await this._segmentWav(wavPath, segDir);
+        if (!parts.length) {
+          throw new Error('Falha ao segmentar áudio (nenhuma parte gerada).');
+        }
+
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          const r = await this.transcriptionService.transcribeAudio(p, null, extraInfo);
+
+          if (!r.success) {
+            console.error('Erro na transcrição de parte:', p, r.error);
+            throw new Error(`Erro na transcrição de uma das partes: ${p}`);
+          }
+          partResults.push(r);
+        }
+
+        mergedText = partResults.map((r) => r.transcription || '').join('\n\n');
+
+        const result = await this.transcriptionService.saveFinalTranscription(
+          finalFileName,
+          mergedText,
+          extraInfo,
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || 'Falha ao salvar a transcrição final.');
+        }
+
+        mergedText = result.transcription;
+        analysis = result.analysis;
+        finalMetadata = result.metadata;
+        finalFile = result.fileName;
+      }
+
+      this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
+        status: 'concluida',
+        updatedAt: new Date().toISOString(),
+        transcriptionFileName: finalFile,
+        ...(extraInfo?.discenteId ? { discenteId: extraInfo.discenteId } : {}),
+        ...(extraInfo?.studentEmail ? { studentEmail: extraInfo.studentEmail } : {}),
+        ...(extraInfo?.studentName ? { studentName: extraInfo.studentName } : {}),
+        ...(extraInfo?.curso ? { curso: extraInfo.curso } : {}),
+        ...(extraInfo?.solicitacaoId ? { solicitacaoId: extraInfo.solicitacaoId } : {}),
+      });
+
+      if (extraInfo?.discenteId) {
+        this.triggerDiscenteReprocess(extraInfo.discenteId).catch((e) =>
+          console.warn('Falha ao agendar reprocessamento automático:', e?.message),
+        );
+      }
+
+      console.log(`[transcription-job ${jobId}] Concluído com sucesso (${finalFile})`);
+      return {
+        success: true,
+        data: {
+          fileName: finalFile,
+          transcription: mergedText,
+          parts: partResults.map((r, idx) => ({
+            index: idx + 1,
+            fileName: r.fileName,
+            metadata: r.metadata || null,
+          })),
+          analysis: analysis || null,
+          metadata: finalMetadata || null,
+        },
+      };
+    } catch (error) {
+      console.error(`[transcription-job ${jobId}] Erro no processamento:`, error);
+      this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
+        status: 'erro_transcricao',
+        updatedAt: new Date().toISOString(),
+      });
+      return { success: false, message: error?.message || 'Erro no processamento de mídia' };
+    } finally {
+      if (originalPath) removeIfExists(originalPath);
+      if (workDir) removeDir(workDir);
+      if (segDir) removeDir(segDir);
+    }
+  }
+
+  startAsyncTranscriptionJob(params, { updateMeetingSafe } = {}) {
+    const jobId =
+      params.jobId ||
+      `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setImmediate(() => {
+      this.processMediaJob({ ...params, jobId, updateMeetingSafe }).catch((err) =>
+        console.error(`[transcription-job ${jobId}] Falha geral:`, err),
+      );
+    });
+
+    return jobId;
+  }
+
+  async reprocessAll({ discenteId, force = false }) {
+    if (this.reprocessInFlight) {
+      return {
+        blocked: true,
+        message: 'Há um reprocessamento em andamento. Tente novamente em instantes.',
+      };
+    }
+
+    this.reprocessInFlight = true;
+    try {
+      const list = await this.transcriptionService.listTranscriptionsWithMetadata();
+      const filtered = discenteId
+        ? list.filter(
+            (t) => t.metadata?.discenteId === discenteId && shouldReprocessEntry(t, force),
+          )
+        : list.filter((t) => shouldReprocessEntry(t, force));
+
+      const results = [];
+      for (const item of filtered) {
+        const r = await this.transcriptionService.reprocessTranscription(item.fileName);
+        results.push({
+          fileName: item.fileName,
+          success: r.success,
+          message: r.message || null,
+        });
+      }
+
+      return {
+        blocked: false,
+        total: filtered.length,
+        results,
+      };
+    } finally {
+      this.reprocessInFlight = false;
+    }
+  }
+}
+
+export default TranscriptionMediaJobService;

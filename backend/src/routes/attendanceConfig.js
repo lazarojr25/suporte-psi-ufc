@@ -1,13 +1,23 @@
 import express from 'express';
-import { getAttendanceConfig, updateAttendanceConfig } from '../controllers/attendanceConfig.js';
+import AttendanceConfigService from '../services/attendanceConfigService.js';
 
 const router = express.Router();
+
+const service = new AttendanceConfigService();
+
+const withStatus = (res, result) => {
+  const statusCode = result?.statusCode || 200;
+  if (result?.success === false) {
+    return res.status(statusCode).json(result);
+  }
+  return res.status(statusCode).json(result);
+};
 
 // GET /api/attendance-config
 router.get('/', async (req, res) => {
   try {
-    const config = await getAttendanceConfig();
-    res.json({ success: true, data: config });
+    const result = await service.getConfig();
+    return withStatus(res, result);
   } catch (error) {
     console.error('Erro ao obter attendance-config:', error);
     res.status(500).json({
@@ -22,9 +32,8 @@ router.get('/', async (req, res) => {
 // body: { periodStart, periodEnd, maxSessionsPerDiscente }
 router.put('/', async (req, res) => {
   try {
-    const partial = req.body || {};
-    const updated = await updateAttendanceConfig(partial);
-    res.json({ success: true, data: updated });
+    const result = await service.updateConfig(req.body || {});
+    return withStatus(res, result);
   } catch (error) {
     console.error('Erro ao atualizar attendance-config:', error);
     res.status(500).json({

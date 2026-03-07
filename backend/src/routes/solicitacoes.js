@@ -1,26 +1,26 @@
-// src/routes/solicitacoes.js
 import express from 'express';
 import { getAdminDb } from '../firebaseAdmin.js';
+import SolicitacoesService from '../services/solicitacoesService.js';
 
 const router = express.Router();
-const isStaff = (user) => user && (user.role === 'admin' || user.role === 'servidor');
 
-// Inicializa Firebase Admin (mesma lógica que você já usa em meetings.js)
-let db;
+let db = null;
 try {
   db = getAdminDb();
 } catch (error) {
   console.error('Erro ao inicializar Firebase Admin em solicitacoes:', error);
 }
 
-function mapDoc(doc) {
-  return {
-    id: doc.id,
-    ...doc.data(),
-  };
-}
+const solicitacoesService = new SolicitacoesService(db);
 
-// GET /api/solicitacoes?discenteId=xxx&status=yyy
+const withStatus = (res, result) => {
+  const statusCode = result?.statusCode || 200;
+  if (result?.success === false) {
+    return res.status(statusCode).json(result);
+  }
+  return res.status(statusCode).json(result);
+};
+
 router.get('/', async (req, res) => {
   try {
     if (!req.user) {
@@ -31,28 +31,14 @@ router.get('/', async (req, res) => {
     }
 
     const { discenteId, status } = req.query;
-
-    let ref = db.collection('solicitacoesAtendimento');
-
-    if (discenteId) {
-      ref = ref.where('discenteId', '==', discenteId);
-    }
-
-    if (status) {
-      ref = ref.where('status', '==', status);
-    }
-
-    const snapshot = await ref.get();
-    const items = snapshot.docs.map(mapDoc);
-
-    res.json({
-      success: true,
-      data: items,
-      total: items.length,
+    const result = await solicitacoesService.listSolicitacoes({
+      discenteId,
+      status,
     });
+    return withStatus(res, result);
   } catch (error) {
     console.error('Erro ao listar solicitações:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao listar solicitações',
       error: error.message,
@@ -60,7 +46,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// (opcional) GET /api/solicitacoes/:id
 router.get('/:id', async (req, res) => {
   try {
     if (!req.user) {
@@ -71,23 +56,11 @@ router.get('/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const docRef = db.collection('solicitacoesAtendimento').doc(id);
-    const snap = await docRef.get();
-
-    if (!snap.exists) {
-      return res.status(404).json({
-        success: false,
-        message: 'Solicitação não encontrada',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: mapDoc(snap),
-    });
+    const result = await solicitacoesService.getSolicitacaoById(id);
+    return withStatus(res, result);
   } catch (error) {
     console.error('Erro ao obter solicitação:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erro ao obter solicitação',
       error: error.message,
