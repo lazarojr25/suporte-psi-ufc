@@ -17,28 +17,32 @@ export default function AgendaSidebar({
   onStatusFilterChange,
   onSelectEvent,
   onNavigate,
-  upcomingMeetings,
 }) {
+  const getTypeClass = (type) =>
+    type === 'meeting'
+      ? 'bg-blue-100 text-blue-800 border-blue-200'
+      : 'bg-amber-100 text-amber-800 border-amber-200';
+
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3">
+    <div className="bg-white rounded-xl shadow p-4 space-y-3 min-h-0 h-full flex flex-col overflow-hidden">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs uppercase text-gray-500">Dia selecionado</p>
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-[11px] uppercase text-gray-500">Dia selecionado</p>
+          <p className="text-base sm:text-lg font-semibold text-gray-900">
             {formatSelectedDateLabel(selectedDate)}
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-[11px] sm:text-xs text-gray-500">
             {getDaySummaryLabel(
               selectedDayEvents.solicitacoesPendentes.length,
               selectedDayEvents.meetings.length
             )}
           </p>
         </div>
-        <div className="flex flex-col gap-2 text-xs w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+        <div className="flex flex-col gap-2 text-[11px] sm:text-xs w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           <select
             value={typeFilter}
             onChange={(e) => onTypeFilterChange(e.target.value)}
-            className="border rounded-md px-2 py-1 text-xs w-full sm:w-auto"
+            className="border rounded-md px-2 py-1 w-full sm:w-auto"
           >
             <option value="all">Todos os tipos</option>
             <option value="meeting">Sessões</option>
@@ -47,7 +51,7 @@ export default function AgendaSidebar({
           <select
             value={statusFilter}
             onChange={(e) => onStatusFilterChange(e.target.value)}
-            className="border rounded-md px-2 py-1 text-xs w-full sm:w-auto"
+            className="border rounded-md px-2 py-1 w-full sm:w-auto"
           >
             {statusOptions.map((status) => (
               <option key={status} value={status}>
@@ -58,70 +62,83 @@ export default function AgendaSidebar({
         </div>
       </div>
 
-      {selectedEvents.length === 0 ? (
-        <p className="text-sm text-gray-500">Nenhum evento para esta data.</p>
-      ) : filteredEvents.length === 0 ? (
-        <p className="text-sm text-gray-500">Nenhum evento corresponde aos filtros.</p>
-      ) : (
-        <div className="grid grid-cols-1 gap-2 max-h-[420px] overflow-y-auto pr-1">
-          {filteredEvents.map((evt) => (
-            <div
+      <div className="flex-1 min-h-0 max-h-[52vh] md:max-h-none overflow-y-auto pr-1 pb-3 space-y-2.5">
+        {selectedEvents.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum evento para esta data.</p>
+        ) : filteredEvents.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum evento corresponde aos filtros.</p>
+        ) : (
+          filteredEvents.map((evt) => (
+            <button
+              type="button"
               key={`${evt.type}-${evt.id}`}
-              className={`border rounded-lg p-3 bg-gray-50 flex flex-col gap-1 cursor-pointer ${
-                selectedEvent?.id === evt.id ? 'ring-2 ring-blue-200 border-blue-400' : ''
-              }`}
               onClick={() => onSelectEvent(evt)}
+              className={`w-full min-h-[96px] text-left rounded-lg border bg-white px-3 py-2.5 flex flex-col gap-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 cursor-pointer ${
+                (selectedEvent?.id === evt.id && selectedEvent?.type === evt.type)
+                  ? 'ring-2 ring-blue-200 border-blue-400 bg-blue-50/50'
+                  : 'hover:border-gray-300 hover:bg-gray-50'
+              }`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <span
-                  className={`px-2 py-0.5 text-[11px] rounded-full font-semibold ${
-                    evt.type === 'meeting'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-amber-100 text-amber-800'
-                  }`}
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] sm:text-[11px] font-semibold ${getTypeClass(
+                    evt.type
+                  )}`}
                 >
                   {evt.type === 'meeting' ? 'Sessão' : 'Solicitação'}
                 </span>
-                {evt.time && (
-                  <span className="text-[11px] text-gray-600">{evt.time}</span>
+                <span className="text-xs text-gray-500 shrink-0">
+                  {evt.time || 'Sem horário'}
+                </span>
+              </div>
+
+              <p className="text-gray-900 font-semibold text-sm sm:text-[15px] leading-tight break-words">
+                {evt.title}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600">
+                {(evt.curso || evt.status) && (
+                  <p className="break-words">
+                    {evt.curso && <span>Curso: {evt.curso}</span>}
+                    {evt.curso && evt.status ? <span className="text-gray-500"> • </span> : null}
+                    {evt.status && (
+                      <span>
+                        Status: <span className="text-gray-700 font-semibold">{evt.status}</span>
+                      </span>
+                    )}
+                  </p>
                 )}
               </div>
-              <p className="text-gray-800 font-medium">{evt.title}</p>
-              {evt.status && (
-                <p className="text-[11px] text-gray-500">Status: {evt.status}</p>
-              )}
-              {evt.studentName && (
-                <p className="text-[11px] text-gray-500">Discente: {evt.studentName}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+            </button>
+          ))
+        )}
+      </div>
+      
 
-      <div className="pt-3 border-t">
-        <p className="text-xs uppercase text-gray-500 mb-2">Detalhes</p>
+      <div className="pt-3 border-t shrink-0">
+        <p className="text-[11px] uppercase text-gray-500 mb-2">Detalhes</p>
         {!selectedEvent ? (
           <p className="text-sm text-gray-500">Selecione um evento.</p>
         ) : (
           <div className="space-y-2 text-sm">
             <p className="font-semibold text-gray-800">{selectedEvent.title}</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-[11px] text-gray-500">
               Tipo: {selectedEvent.type === 'meeting' ? 'Sessão' : 'Solicitação'}{' '}
               {selectedEvent.time && `• ${selectedEvent.time}`}
             </p>
             {selectedEvent.studentName && (
-              <p className="text-xs text-gray-500">Discente: {selectedEvent.studentName}</p>
+              <p className="text-[11px] text-gray-500">Discente: {selectedEvent.studentName}</p>
             )}
             {selectedEvent.curso && (
-              <p className="text-xs text-gray-500">Curso: {selectedEvent.curso}</p>
+              <p className="text-[11px] text-gray-500">Curso: {selectedEvent.curso}</p>
             )}
             {selectedEvent.status && (
-              <p className="text-xs text-gray-500">Status: {selectedEvent.status}</p>
+              <p className="text-[11px] text-gray-500">Status: {selectedEvent.status}</p>
             )}
 
             {selectedEvent.type === 'meeting' ? (
               <div className="mt-3 space-y-3">
-                <p className="text-xs text-gray-500">
+                <p className="text-[11px] text-gray-500">
                   Abra a sessão para registrar prontuário, notas e transcrição.
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -145,11 +162,11 @@ export default function AgendaSidebar({
               </div>
             ) : (
               <div className="mt-3 space-y-3">
-                <p className="text-xs text-gray-500">
+                <p className="text-[11px] text-gray-500">
                   Abra a solicitação para revisar dados e registrar uma sessão.
                 </p>
                 {selectedEvent.status && isSolicitacaoComEncontroAgendado(selectedEvent.status) && (
-                  <p className="text-xs text-amber-700">
+                  <p className="text-[11px] text-amber-700">
                     Esta solicitação já possui um encontro agendado.
                   </p>
                 )}
@@ -178,24 +195,6 @@ export default function AgendaSidebar({
         )}
       </div>
 
-      <div className="pt-2 border-t text-sm">
-        <p className="text-xs uppercase text-gray-500 mb-2">Próximas sessões</p>
-        {upcomingMeetings.length === 0 ? (
-          <p className="text-gray-500 text-sm">Nenhuma sessão futura.</p>
-        ) : (
-          <ul className="space-y-2">
-            {upcomingMeetings.map((m) => (
-              <li key={m.id} className="border rounded-lg p-2 bg-white">
-                <p className="font-semibold text-gray-800">{m.studentName || 'Sessão'}</p>
-                <p className="text-xs text-gray-600">
-                  {m.scheduledDate} {m.scheduledTime && `às ${m.scheduledTime}`}
-                </p>
-                <p className="text-[11px] text-gray-500">Status: {m.status}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }

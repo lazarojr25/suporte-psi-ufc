@@ -17,15 +17,17 @@ export default function ListaDiscentes() {
   } = useListaDiscentesData();
 
   return (
-    <div className="max-w-6xl mx-auto p-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <ListaDiscentesHeader />
-        <ListaDiscentesFilters
-          search={search}
-          cursoFilter={cursoFilter}
-          onSearchChange={setSearch}
-          onCursoChange={setCursoFilter}
-        />
+    <div className="h-full w-full flex flex-col min-h-0 overflow-hidden">
+      <div className="bg-white rounded-xl shadow p-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <ListaDiscentesHeader />
+          <ListaDiscentesFilters
+            search={search}
+            cursoFilter={cursoFilter}
+            onSearchChange={setSearch}
+            onCursoChange={setCursoFilter}
+          />
+        </div>
       </div>
 
       {error && (
@@ -41,10 +43,12 @@ export default function ListaDiscentes() {
           Nenhum discente encontrado com os filtros atuais.
         </div>
       ) : (
-        <ListaDiscentesTable
-          discentes={discentesFiltrados}
-          onOpenDetails={openDetails}
-        />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <ListaDiscentesTable
+            discentes={discentesFiltrados}
+            onOpenDetails={openDetails}
+          />
+        </div>
       )}
     </div>
   );

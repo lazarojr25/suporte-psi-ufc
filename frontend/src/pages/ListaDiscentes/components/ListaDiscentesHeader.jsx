@@ -3,6 +3,7 @@ import React from 'react';
 export default function ListaDiscentesHeader() {
   return (
     <div>
+      <p className="text-xs uppercase text-gray-500">Discentes</p>
       <h1 className="text-2xl font-bold text-gray-900">Discentes</h1>
       <p className="text-sm text-gray-600">
         Listagem de estudantes cadastrados no sistema.

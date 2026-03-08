@@ -20,8 +20,10 @@ export default function Sessoes() {
   } = useSessoesData();
 
   return (
-    <div className="space-y-4">
-      <SessoesHeader onRefresh={loadMeetings} />
+    <div className="h-full w-full flex flex-col min-h-0 gap-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow p-4">
+        <SessoesHeader onRefresh={loadMeetings} />
+      </div>
 
       <SessoesFilters
         statusFilter={statusFilter}

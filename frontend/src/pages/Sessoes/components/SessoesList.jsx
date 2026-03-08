@@ -13,8 +13,8 @@ export default function SessoesList({
   onOpenMeeting,
 }) {
   return (
-    <div className="bg-white rounded-xl shadow">
-      <div className="px-4 py-3 border-b flex items-center justify-between">
+    <div className="bg-white rounded-xl shadow flex-1 min-h-0 overflow-y-auto">
+      <div className="px-3 py-2 sm:px-4 sm:py-2.5 border-b flex items-center justify-between">
         <p className="text-sm text-gray-700">
           {meetings.length} sessão(ões) encontrada(s)
         </p>
@@ -29,7 +29,7 @@ export default function SessoesList({
               key={m.id}
               type="button"
               onClick={() => onOpenMeeting(m.id)}
-              className="w-full text-left px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+              className="w-full text-left px-3 py-2.5 sm:px-4 sm:py-3 hover:bg-gray-50 focus:bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -50,7 +50,7 @@ export default function SessoesList({
                   {m.studentEmail || '---'} {m.curso ? `• ${m.curso}` : ''}
                 </p>
               </div>
-              <div className="text-right text-xs text-gray-500">
+              <div className="text-right text-[11px] sm:text-xs text-gray-500">
                 Criada em: {formatDate(m.createdAt)}
               </div>
             </button>
@@ -58,7 +58,7 @@ export default function SessoesList({
         })}
 
         {!loading && !meetings.length && (
-          <div className="px-4 py-6 text-sm text-gray-600">
+          <div className="px-3 py-4 sm:px-4 sm:py-6 text-sm text-gray-600">
             Nenhuma sessão encontrada.
           </div>
         )}

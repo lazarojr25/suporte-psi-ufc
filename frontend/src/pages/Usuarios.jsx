@@ -15,7 +15,7 @@ export default function Usuarios() {
   } = useUsuariosData();
 
   return (
-    <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow p-6">
+    <div className="h-full w-full flex flex-col min-h-0 bg-white rounded-2xl shadow p-6 overflow-hidden">
       <div className="flex items-center justify-between mb-4">
         <UsuariosHeader />
       </div>
@@ -30,13 +30,15 @@ export default function Usuarios() {
       )}
 
       {!loading && usuarios.length > 0 && (
-        <UsuariosTable
-          usuarios={usuarios}
-          onRoleChange={handleRoleChange}
-          onToggleActive={handleToggleActive}
-          savingId={savingId}
-          togglingId={togglingId}
-        />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <UsuariosTable
+            usuarios={usuarios}
+            onRoleChange={handleRoleChange}
+            onToggleActive={handleToggleActive}
+            savingId={savingId}
+            togglingId={togglingId}
+          />
+        </div>
       )}
     </div>
   );

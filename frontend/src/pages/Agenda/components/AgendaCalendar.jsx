@@ -11,7 +11,7 @@ export default function AgendaCalendar({
   const todayKey = new Date().toISOString().slice(0, 10);
 
   return (
-    <div className="bg-white rounded-xl shadow p-4 xl:col-span-2">
+    <div className="bg-white rounded-xl shadow p-3 sm:p-4 h-full flex flex-col">
       <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-gray-600 mb-2">
         {WEEK_DAYS.map((d) => (
           <div key={d} className="text-center py-1">
@@ -19,7 +19,7 @@ export default function AgendaCalendar({
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1 flex-1 min-h-0 auto-rows-fr">
         {calendarDays.map((day) => {
           const key = day.toISOString().slice(0, 10);
           const inMonth = day.getMonth() === currentMonth.getMonth();
@@ -33,31 +33,30 @@ export default function AgendaCalendar({
             <button
               type="button"
               key={key}
-              onClick={() => onSelectDate(key)}
-              className={`h-24 rounded-lg border flex flex-col items-start p-2 text-left transition ${
+              onClick={() => onSelectDate(key, hasEvents)}
+              className={`h-full min-h-[40px] sm:min-h-[44px] rounded-lg border flex flex-col items-start p-1.5 text-left transition ${
                 inMonth ? 'bg-white' : 'bg-gray-50'
               } ${isToday ? 'border-blue-300 bg-blue-50' : ''} ${
                 selectedDate === key ? 'border-blue-500 ring-1 ring-blue-200' : 'border-gray-200'
               }`}
             >
               <span
-                className={`text-sm font-semibold ${
+                className={`text-xs sm:text-sm font-semibold ${
                   inMonth ? 'text-gray-900' : 'text-gray-400'
                 } ${isToday ? 'text-blue-600' : ''}`}
               >
                 {day.getDate()}
               </span>
               {hasEvents && (
-                <div className="mt-2 w-full flex flex-col gap-1">
+                <div className="mt-1 w-full flex flex-col gap-0.5">
                   {pendingCount > 0 && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-semibold">
-                      {pendingCount} solicitação{pendingCount > 1 ? 's' : ''} pendente
-                      {pendingCount > 1 ? 's' : ''}
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] leading-none font-semibold truncate">
+                      {pendingCount} solicit.
                     </span>
                   )}
                   {meetingsCount > 0 && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-800 text-[11px] font-semibold">
-                      {meetingsCount} encontro{meetingsCount > 1 ? 's' : ''}
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[10px] leading-none font-semibold truncate">
+                      {meetingsCount} sessões
                     </span>
                   )}
                 </div>

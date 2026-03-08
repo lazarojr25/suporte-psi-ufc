@@ -157,13 +157,21 @@ export default function useAgendaData() {
   }, [selectedEvents, typeFilter, statusFilter]);
 
   useEffect(() => {
-    if (filteredEvents.length > 0) {
+    if (filteredEvents.length === 0) {
+      setSelectedEvent(null);
+      return;
+    }
+
+    const stillExists = filteredEvents.some(
+      (e) =>
+        e.id === selectedEvent?.id && e.type === selectedEvent?.type
+    );
+
+    if (!selectedEvent || !stillExists) {
       const meeting = filteredEvents.find((e) => e.type === 'meeting');
       setSelectedEvent(meeting || filteredEvents[0]);
-    } else {
-      setSelectedEvent(null);
     }
-  }, [filteredEvents]);
+  }, [filteredEvents, selectedEvent]);
 
   const upcomingMeetings = useMemo(() => {
     const now = new Date();

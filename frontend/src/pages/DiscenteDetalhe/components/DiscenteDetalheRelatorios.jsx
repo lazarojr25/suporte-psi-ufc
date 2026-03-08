@@ -21,15 +21,15 @@ export default function DiscenteDetalheRelatorios({
   ];
 
   return (
-    <div className="bg-white rounded-xl shadow p-4">
+    <div className="bg-white rounded-xl shadow p-3 sm:p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-        <h2 className="text-lg font-semibold">Transcrições e análise desse discente</h2>
+        <h2 className="text-base sm:text-lg font-semibold">Transcrições e análise desse discente</h2>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={onDownloadTxt}
             disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf || !hasTranscricoes}
-            className="px-3 py-2 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+            className="px-2.5 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
             {downloadingDiscenteReport ? 'Gerando...' : 'Baixar TXT'}
           </button>
@@ -37,7 +37,7 @@ export default function DiscenteDetalheRelatorios({
             type="button"
             onClick={onDownloadPdf}
             disabled={downloadingDiscenteReport || downloadingDiscenteReportPdf || !hasTranscricoes}
-            className="px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+            className="px-2.5 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
           >
             {downloadingDiscenteReportPdf ? 'Gerando PDF...' : 'Baixar PDF'}
           </button>
@@ -49,19 +49,19 @@ export default function DiscenteDetalheRelatorios({
       ) : (
         <>
           {relatorioDiscente && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-sm">
-              <div className="bg-gray-50 rounded-lg p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 mb-4 text-xs sm:text-sm">
+              <div className="bg-gray-50 rounded-lg p-2.5 sm:p-3">
                 <p className="text-gray-500">Total de transcrições</p>
-                <p className="text-xl font-semibold">{relatorioDiscente.totalTranscriptions}</p>
+                <p className="text-lg sm:text-xl font-semibold">{relatorioDiscente.totalTranscriptions}</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
+              <div className="bg-gray-50 rounded-lg p-2.5 sm:p-3">
                 <p className="text-gray-500">Tamanho total (KB)</p>
-                <p className="text-xl font-semibold">
+                <p className="text-lg sm:text-xl font-semibold">
                   {Math.round((relatorioDiscente.totalSizeBytes || 0) / 1024)}
                 </p>
               </div>
               {relatorioDiscente.sentimentsAvg && (
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className="bg-gray-50 rounded-lg p-2.5 sm:p-3">
                   <p className="text-gray-500">Sentimento médio</p>
                   <p className="text-xs text-gray-700">
                     Positivo: {(relatorioDiscente.sentimentsAvg.positive * 100).toFixed(1)}%
@@ -76,15 +76,15 @@ export default function DiscenteDetalheRelatorios({
           )}
 
           {historyPatterns && (
-            <div className="mb-4 border rounded-lg p-4 bg-gray-50 text-sm">
-              <h3 className="font-semibold mb-3 text-gray-800">Padrões percebidos ao longo das sessões</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="mb-4 border rounded-lg p-3 sm:p-4 bg-gray-50 text-xs sm:text-sm">
+              <h3 className="font-semibold mb-2 text-gray-800">Padrões percebidos ao longo das sessões</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {historyListSections.map((section) => {
                   const entries = historyPatterns?.[section.key];
                   if (!Array.isArray(entries) || entries.length === 0) return null;
 
                   return (
-                    <div key={section.key} className="bg-white rounded-lg p-3 shadow-inner">
+                    <div key={section.key} className="bg-white rounded-lg p-2.5 shadow-inner">
                       <p className="text-xs uppercase text-gray-500 font-semibold mb-1">{section.label}</p>
                       <p className="text-gray-700">{entries.join(', ')}</p>
                     </div>
@@ -100,7 +100,7 @@ export default function DiscenteDetalheRelatorios({
           )}
 
           {sentimentTimeline.length > 0 && (
-            <div className="mb-4 border rounded-lg p-4 bg-white text-sm space-y-2">
+            <div className="mb-4 border rounded-lg p-3 sm:p-4 bg-white text-xs sm:text-sm space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-800">Linha do tempo de sentimentos</h3>
                 <span className="text-[11px] text-gray-500">Distribuição de positivo / neutro / negativo</span>
@@ -160,7 +160,7 @@ export default function DiscenteDetalheRelatorios({
                   key={t.fileName}
                   type="button"
                   onClick={() => setSelectedTranscription(t)}
-                  className={`border rounded-lg p-3 text-left bg-white shadow-sm hover:border-blue-400 transition ${
+                  className={`border rounded-lg p-2.5 text-left bg-white shadow-sm hover:border-blue-400 transition ${
                     selectedTranscription?.fileName === t.fileName ? 'ring-2 ring-blue-200' : ''
                   }`}
                 >
@@ -181,7 +181,7 @@ export default function DiscenteDetalheRelatorios({
             </div>
 
             {selectedTranscription && (
-              <div className="mt-3 border rounded-lg p-4 bg-gray-50 text-sm">
+              <div className="mt-3 border rounded-lg p-2.5 sm:p-3 bg-gray-50 text-sm">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
                   <div>
                     <p className="font-semibold text-gray-900">{selectedTranscription.fileName}</p>
@@ -201,7 +201,9 @@ export default function DiscenteDetalheRelatorios({
                 </div>
 
                 {selectedTranscription.analysis?.summary && (
-                  <p className="text-gray-700 mb-2">{selectedTranscription.analysis.summary}</p>
+                  <p className="text-[13px] leading-relaxed text-gray-700 mb-2">
+                    {selectedTranscription.analysis.summary}
+                  </p>
                 )}
 
                 {Array.isArray(selectedTranscription.analysis?.keywords) && (

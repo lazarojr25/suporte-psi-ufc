@@ -8,11 +8,13 @@ export default function DiscenteDetalheRelatoriosPsicologicos({
   onOpenMeeting,
 }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4">
+    <div className="bg-white rounded-xl shadow p-3 sm:p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
         <div>
-          <h2 className="text-lg font-semibold">Relatórios psicológicos</h2>
-          <p className="text-xs text-gray-500">Registros por sessão, alinhados ao manual do CFP.</p>
+          <h2 className="text-base sm:text-lg font-semibold">Relatórios psicológicos</h2>
+          <p className="text-[11px] sm:text-xs text-gray-500">
+            Registros por sessão, alinhados ao manual do CFP.
+          </p>
         </div>
       </div>
 
@@ -21,12 +23,15 @@ export default function DiscenteDetalheRelatoriosPsicologicos({
       ) : clinicalReports.length === 0 ? (
         <p className="text-sm text-gray-500">Nenhum relatório registrado.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 text-xs sm:text-sm">
           {clinicalReports.map((m) => {
             const cr = m.clinicalRecord || {};
             const status = buildMeetingStatus(m);
             return (
-              <div key={`report-${m.id}`} className="border rounded-lg p-3 bg-gray-50 flex flex-col gap-2">
+              <div
+                key={`report-${m.id}`}
+                className="border rounded-lg p-2.5 sm:p-3 bg-gray-50 flex flex-col gap-2"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Sessão: {formatMeetingLabel(m)}</p>
@@ -45,7 +50,7 @@ export default function DiscenteDetalheRelatoriosPsicologicos({
                 </div>
 
                 {cr.motivoDemanda && (
-                  <p className="text-xs text-gray-700">
+                  <p className="text-xs text-gray-700 leading-relaxed">
                     <span className="font-semibold text-gray-800">Motivo: </span>
                     {cr.motivoDemanda}
                   </p>
@@ -57,7 +62,7 @@ export default function DiscenteDetalheRelatoriosPsicologicos({
                   </p>
                 )}
                 {cr.analiseCompreensao && (
-                  <p className="text-xs text-gray-700">
+                  <p className="text-xs text-gray-700 leading-relaxed">
                     <span className="font-semibold text-gray-800">Análise: </span>
                     {cr.analiseCompreensao}
                   </p>
@@ -81,7 +86,7 @@ export default function DiscenteDetalheRelatoriosPsicologicos({
                   cr.planoEncaminhamentos ||
                   cr.planoCriterios) && (
                   <div className="border-t pt-2 mt-1 space-y-1 text-[11px] text-gray-700">
-                    <p className="font-semibold text-gray-800 text-xs">Plano de ação</p>
+                    <p className="font-semibold text-gray-800 text-[11px]">Plano de ação</p>
                     {cr.planoObjetivos && (
                       <p>
                         <span className="font-semibold">Objetivos: </span>

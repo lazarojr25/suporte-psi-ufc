@@ -11,9 +11,9 @@ export default function DiscenteDetalheSessaoLista({
   const [finishingMeetingId, setFinishingMeetingId] = useState(null);
 
   return (
-    <div className="bg-white rounded-xl shadow p-4">
+    <div className="bg-white rounded-xl shadow p-3 sm:p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-        <h2 className="text-lg font-semibold">Sessões</h2>
+        <h2 className="text-base sm:text-lg font-semibold">Sessões</h2>
         <p className="text-xs text-gray-500">Galeria resumida (mais recentes primeiro).</p>
       </div>
 
@@ -22,7 +22,7 @@ export default function DiscenteDetalheSessaoLista({
       ) : meetingsDiscente.length === 0 ? (
         <p className="text-sm text-gray-500">Nenhuma sessão registrada para este discente.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3 text-sm">
           {meetingsDiscente.map((m) => {
             const summaryText =
               m.clinicalRecord?.analiseCompreensao ||
@@ -34,7 +34,7 @@ export default function DiscenteDetalheSessaoLista({
             const planText = m.clinicalRecord?.planoObjetivos || null;
             const status = buildMeetingStatus(m);
             return (
-              <div key={m.id} className="border rounded-lg p-3 bg-gray-50 flex flex-col gap-2">
+              <div key={m.id} className="border rounded-lg p-2.5 sm:p-3 bg-gray-50 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{formatMeetingLabel(m)}</p>

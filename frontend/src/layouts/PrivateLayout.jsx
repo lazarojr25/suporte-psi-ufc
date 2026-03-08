@@ -83,9 +83,9 @@ export default function PrivateLayout() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="h-dvh bg-gray-100 flex flex-col overflow-hidden">
       <TopBar user={user} role={role} />
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="flex-1 min-h-0 max-w-6xl w-full mx-auto px-4 py-4 overflow-hidden">
         <Outlet context={{ role }} />
       </main>
     </div>

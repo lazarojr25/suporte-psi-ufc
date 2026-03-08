@@ -8,7 +8,10 @@ export default function RelatoriosHeader({
 }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 className="text-2xl font-bold">Relatórios gerais de atendimentos</h1>
+      <div>
+        <p className="text-xs uppercase text-gray-500">Relatórios</p>
+        <h1 className="text-2xl font-bold text-gray-900">Relatórios gerais de atendimentos</h1>
+      </div>
       <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
         <button
           onClick={onDownloadTxt}
