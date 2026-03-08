@@ -1,264 +1,101 @@
-import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-
-import { GoogleGenAI } from '@google/genai';
 import {
-  saveTranscriptionMetadata,
-  getAllTranscriptionsMetadata,
-  deleteTranscriptionMetadata,
-} from './firestoreService.js';
+  ANALYSIS_STATUS,
+  DEFAULT_MODEL,
+  TRANSCRIPTION_SUMMARY_SEPARATOR,
+  getTranscriptionsDir,
+} from './transcription/constants/transcriptionConstants.js';
+import { formatTranscriptionDocument } from './transcription/utils/transcriptionFormatter.js';
+import TranscriptionStorage from './transcription/storage/transcriptionStorage.js';
+import TranscriptionAiClient from './transcription/clients/transcriptionAiClient.js';
+import TranscriptionMetadataRepository from './transcription/repositories/transcriptionMetadataRepository.js';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 class TranscriptionService {
   constructor() {
     // Diretório onde as transcrições são salvas (apenas o conteúdo)
-    this.transcriptionsDir = path.join(__dirname, '..', 'transcriptions');
-    this.ensureDir(this.transcriptionsDir);
-    // Metadados e análises – fallback local em metadata.json
-    this.metadataFile = path.join(this.transcriptionsDir, 'metadata.json');
+    this.transcriptionsDir = getTranscriptionsDir();
+    this.storage = new TranscriptionStorage(this.transcriptionsDir);
+    this.metadataRepository = new TranscriptionMetadataRepository(this.storage);
 
-    // ---- Configuração da chave do Gemini ----
-    const apiKey =
-      process.env.GOOGLE_AI_API_KEY ||
-      process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      throw new Error(
-        'Chave da API Gemini não encontrada. Defina GOOGLE_AI_API_KEY ou GEMINI_API_KEY no .env.'
-      );
-    }
-
-    // Cliente único do Gemini pra toda a service
-    this.ai = new GoogleGenAI({ apiKey });
-    // Nome do modelo (pode sobrescrever via .env se quiser)
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+    this.aiClient = new TranscriptionAiClient({
+      modelName: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+    });
   }
 
-  formatTranscriptionDocument(transcription, extraInfo = {}, analysis = {}) {
-    const headerLines = [];
-    headerLines.push('=== Dados da sessão ===');
-    if (extraInfo.studentName) headerLines.push(`Discente: ${extraInfo.studentName}`);
-    if (extraInfo.matricula) headerLines.push(`Matrícula: ${extraInfo.matricula}`);
-    if (extraInfo.curso) headerLines.push(`Curso: ${extraInfo.curso}`);
-    if (extraInfo.sessionDate) headerLines.push(`Data da sessão: ${extraInfo.sessionDate}`);
-    if (extraInfo.meetingId) headerLines.push(`Meeting ID: ${extraInfo.meetingId}`);
-    if (extraInfo.solicitacaoId) headerLines.push(`Solicitação ID: ${extraInfo.solicitacaoId}`);
-
-    const summaryBlock = [];
-    summaryBlock.push('=== Resumo automático ===');
-    if (analysis.summary) summaryBlock.push(`Resumo: ${analysis.summary}`);
-    if (analysis.sentiments) {
-      const s = analysis.sentiments;
-      summaryBlock.push(
-        `Sentimentos: +${((s.positive || 0) * 100).toFixed(1)}% / ~${((s.neutral || 0) * 100).toFixed(1)}% / -${((s.negative || 0) * 100).toFixed(1)}%`
-      );
-    }
-    if (Array.isArray(analysis.keywords) && analysis.keywords.length) {
-      summaryBlock.push(`Palavras-chave: ${analysis.keywords.join(', ')}`);
-    }
-    if (Array.isArray(analysis.topics) && analysis.topics.length) {
-      summaryBlock.push(`Tópicos: ${analysis.topics.join(', ')}`);
-    }
-    if (Array.isArray(analysis.actionableInsights) && analysis.actionableInsights.length) {
-      summaryBlock.push('Insights acionáveis:');
-      analysis.actionableInsights.forEach((insight, idx) => {
-        summaryBlock.push(`  ${idx + 1}. ${insight}`);
-      });
-    }
-
-    const body = [
-      headerLines.join('\n'),
-      '',
-      summaryBlock.join('\n'),
-      '',
-      '=== Transcrição ===',
-      transcription,
-    ];
-
-    return body.join('\n');
-  }
-
-  ensureDir(dir) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-  }
-
-  // Fallback local – leitura de metadados de metadata.json
-  loadMetadata() {
-    if (fs.existsSync(this.metadataFile)) {
-      const data = fs.readFileSync(this.metadataFile, 'utf-8');
-      return JSON.parse(data);
-    }
-    return {};
-  }
-
-  // Fallback local – escrita em metadata.json
-  saveMetadata(metadata) {
-    fs.writeFileSync(
-      this.metadataFile,
-      JSON.stringify(metadata, null, 2),
-      'utf-8'
-    );
-  }
-
-  /**
-   * Remove transcrição (arquivo + metadados em disco) e tenta apagar metadados no Firestore.
-   */
   async deleteTranscription(fileName) {
     if (!fileName) {
       return { success: false, message: 'fileName é obrigatório' };
     }
 
-    const filePath = path.join(this.transcriptionsDir, fileName);
-    const metadataAll = this.loadMetadata();
-
-    // remove arquivo local
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch (err) {
-      console.warn('Falha ao remover arquivo de transcrição local:', err?.message);
+      this.storage.deleteFile(fileName);
+    } catch (error) {
+      console.warn('Falha ao remover arquivo de transcrição local:', error?.message);
     }
 
-    // remove do cache local
-    if (metadataAll[fileName]) {
-      delete metadataAll[fileName];
-      this.saveMetadata(metadataAll);
-    }
-
-    // remove no Firestore (best-effort)
-    try {
-      await deleteTranscriptionMetadata(fileName);
-    } catch (err) {
-      console.warn('Falha ao remover metadados no Firestore:', err?.message);
-    }
+    await this.metadataRepository.delete(fileName);
 
     return { success: true };
   }
 
-  /**
-   * Transcreve um arquivo de áudio usando Gemini.
-   * Se outputFileName === null, significa que é apenas um "chunk"
-   * (retorna só o texto, sem salvar arquivo nem metadados).
-   */
   async transcribeAudio(audioPath, outputFileName, extraInfo = {}) {
     let transcriptionText = '';
-    let uploadedFile = null;
-    let analysisStatus = 'ok';
+    let analysis = null;
+    let analysisStatus = ANALYSIS_STATUS.OK;
     let analysisError = null;
 
     try {
-      // Upload do arquivo já convertido para WAV 16k mono
-      uploadedFile = await this.ai.files.upload({
-        file: audioPath,
-        mimeType: 'audio/wav',
-      });
-
-      // Chamada ao modelo de transcrição
-      const result = await this.ai.models.generateContent({
-        model: this.modelName,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text:
-                  'Transcreva o áudio anexo em português brasileiro. ' +
-                  'Tente separar falantes diferentes quando possível.  ' +
-                  'O resultado deve ser apenas o texto da transcrição, sem introduções ou comentários.',
-              },
-              {
-                fileData: {
-                  mimeType: uploadedFile.mimeType || 'audio/wav',
-                  fileUri: uploadedFile.uri,
-                },
-              },
-            ],
-          },
-        ],
-      });
-
-      // A API do @google/genai pode expor o texto de formas diferentes
-      const rawText =
-        typeof result.text === 'function'
-          ? result.text()
-          : result.text ||
-            (result.response && typeof result.response.text === 'function'
-              ? result.response.text()
-              : '');
-
-      transcriptionText = (rawText || '').trim();
-      if (!transcriptionText) {
-        throw new Error('Transcrição vazia retornada pelo modelo.');
-      }
+      transcriptionText = await this.aiClient.transcribeAudio(audioPath);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para transcrição:', error);
-      // Fallback pra não quebrar o fluxo
       transcriptionText = `[ERRO NA TRANSCRIÇÃO: ${error.message}] Simulação de transcrição para ${path.basename(
-        audioPath
+        audioPath,
       )}.`;
-    } finally {
-      // Remove arquivo enviado para o Gemini (quando disponível)
-      try {
-        if (uploadedFile?.name) {
-          await this.ai.files.delete({ name: uploadedFile.name });
-        }
-      } catch (cleanupErr) {
-        console.warn('Falha ao remover arquivo temporário no Gemini:', cleanupErr?.message);
-      }
     }
 
-    const transcription = transcriptionText;
-
-    // Caso seja apenas um chunk (parte de áudio longo),
-    // não salva em disco nem faz análise aqui.
     if (outputFileName === null) {
       return {
         success: true,
-        transcription,
+        transcription: transcriptionText,
         analysis: null,
-        analysisStatus: 'skipped',
+        analysisStatus: ANALYSIS_STATUS.SKIPPED,
         analysisError: null,
         metadata: null,
         fileName: null,
       };
     }
 
-    // Transcrição final: analisa e salva
-    let analysis = null;
     try {
-      analysis = await this.analyzeTranscription(transcription);
+      analysis = await this.aiClient.analyzeText(transcriptionText);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
-      analysisStatus = 'failed';
+      analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
 
-    const formatted = this.formatTranscriptionDocument(transcription, extraInfo, analysis || {});
-    const metadata = await this.saveCombinedMetadata(
+    const formatted = formatTranscriptionDocument(
+      transcriptionText,
+      extraInfo,
+      analysis || {},
+    );
+    const metadata = await this.metadataRepository.saveCombinedMetadata(
       outputFileName,
       formatted,
       extraInfo,
       analysis,
       analysisStatus,
-      analysisError
+      analysisError,
     );
 
-    const finalPath = path.join(this.transcriptionsDir, outputFileName);
-    fs.writeFileSync(finalPath, formatted, 'utf-8');
+    this.storage.writeText(outputFileName, formatted);
 
     return {
-      success: analysisStatus !== 'failed',
-      error: analysisStatus === 'failed' ? analysisError : null,
-      transcription,
+      success: analysisStatus !== ANALYSIS_STATUS.FAILED,
+      error: analysisStatus === ANALYSIS_STATUS.FAILED ? analysisError : null,
+      transcription: transcriptionText,
       analysis,
       analysisStatus,
       analysisError,
@@ -267,38 +104,38 @@ class TranscriptionService {
     };
   }
 
-  /**
-   * Salva a transcrição já unificada (depois de juntar partes)
-   * e faz a análise com Gemini.
-   */
   async saveFinalTranscription(outputFileName, mergedText, extraInfo = {}) {
     let analysis = null;
-    let analysisStatus = 'ok';
+    let analysisStatus = ANALYSIS_STATUS.OK;
     let analysisError = null;
+
     try {
-      analysis = await this.analyzeTranscription(mergedText);
+      analysis = await this.aiClient.analyzeText(mergedText);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
-      analysisStatus = 'failed';
+      analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
 
-    const formatted = this.formatTranscriptionDocument(mergedText, extraInfo, analysis || {});
-    const metadata = await this.saveCombinedMetadata(
+    const formatted = formatTranscriptionDocument(
+      mergedText,
+      extraInfo,
+      analysis || {},
+    );
+    const metadata = await this.metadataRepository.saveCombinedMetadata(
       outputFileName,
       formatted,
       extraInfo,
       analysis,
       analysisStatus,
-      analysisError
+      analysisError,
     );
 
-    const finalPath = path.join(this.transcriptionsDir, outputFileName);
-    fs.writeFileSync(finalPath, formatted, 'utf-8');
+    this.storage.writeText(outputFileName, formatted);
 
     return {
-      success: analysisStatus !== 'failed',
-      error: analysisStatus === 'failed' ? analysisError : null,
+      success: analysisStatus !== ANALYSIS_STATUS.FAILED,
+      error: analysisStatus === ANALYSIS_STATUS.FAILED ? analysisError : null,
       transcription: mergedText,
       analysis,
       analysisStatus,
@@ -308,164 +145,88 @@ class TranscriptionService {
     };
   }
 
-  /**
-   * Analisa a transcrição com Gemini: sentimentos, keywords, tópicos, resumo…
-   */
   async analyzeTranscription(text) {
-    const prompt = `Contexto: você é um(a) psicólogo(a) clínico(a) analisando uma transcrição de sessão com um discente universitário (contexto acadêmico/psicossocial). Use linguagem neutra, sem diagnósticos formais. Gere APENAS um JSON com:
-1. "sentiments": objeto { "positive": 0.0, "neutral": 0.0, "negative": 0.0 } (valores 0–1, somando ≈1)
-2. "keywords": até 10 palavras-chave ou frases curtas (sem artigos/preposições isoladas)
-3. "topics": até 5 tópicos principais (ex.: “adaptação acadêmica”, “rede de apoio”, “saúde mental”)
-4. "summary": resumo conciso em até 3 frases, mencionando o contexto universitário quando relevante
-5. "actionableInsights": 3 a 5 sugestões de ações/observações clínicas curtas, focadas em apoio ao discente (ex.: fortalecer rede de apoio, estratégias de estudo, encaminhar para serviço de assistência)
-
-Texto a ser analisado:
-"${text}"
-
-Retorne somente o JSON, sem markdown.`;
-
-    const result = await this.ai.models.generateContent({
-      model: this.modelName,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      // nome correto da config na lib nova é “generationConfig”
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const raw =
-      typeof result.text === 'function'
-        ? result.text()
-        : result.text ||
-          (result.response && typeof result.response.text === 'function'
-            ? result.response.text()
-            : '');
-
-    const analysis = JSON.parse(raw);
-    return analysis;
+    return await this.aiClient.analyzeText(text);
   }
 
-  /**
-   * Salva metadados combinados (upload + análise) no Firestore
-   * e também em metadata.json como fallback.
-   */
-  async saveCombinedMetadata(fileName, content, extraInfo, analysis, analysisStatus = 'ok', analysisError = null) {
-    const newEntry = {
-      fileName,
-      size: content.length,
-      createdAt: new Date().toISOString(),
-      metadata: extraInfo,
-      analysis,
-      analysisStatus,
-      analysisError,
-    };
-
-    try {
-      const firestoreId = await saveTranscriptionMetadata(newEntry);
-      if (firestoreId) {
-        newEntry.firestoreId = firestoreId;
-      }
-    } catch (error) {
-      console.warn('Não foi possível salvar metadados no Firestore, usando fallback local.', error?.message);
-    }
-
-    const metadata = this.loadMetadata();
-    metadata[fileName] = newEntry;
-    this.saveMetadata(metadata);
-
-    return newEntry;
-  }
-
-  // Lista transcrições com metadados (tenta Firestore primeiro, fallback local)
   async listTranscriptionsWithMetadata() {
-    try {
-      const firestoreMetadata = await getAllTranscriptionsMetadata();
-      if (Array.isArray(firestoreMetadata) && firestoreMetadata.length > 0) {
-        return firestoreMetadata;
-      }
-    } catch (error) {
-      console.warn('Falha ao carregar metadados do Firestore, usando fallback local.', error?.message);
-    }
-
-    const metadata = this.loadMetadata();
-    return Object.values(metadata);
+    return this.metadataRepository.list();
   }
 
-  // Lista básica (nome + datas + tamanho)
   async listTranscriptions() {
     const list = await this.listTranscriptionsWithMetadata();
-    return list.map((t) => ({
-      fileName: t.fileName,
-      createdAt: t.createdAt,
-      size: t.size,
+    return list.map((transcription) => ({
+      fileName: transcription.fileName,
+      createdAt: transcription.createdAt,
+      size: transcription.size,
     }));
   }
 
-  // Retorna o conteúdo completo de uma transcrição
   getTranscription(fileName) {
-    const filePath = path.join(this.transcriptionsDir, fileName);
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const metadata = this.loadMetadata()[fileName];
-      return {
-        fileName,
-        content,
-        metadata: metadata?.metadata || {},
-        analysis: metadata?.analysis || {},
-      };
-    }
-    return null;
+    const content = this.storage.readText(fileName);
+    if (!content) return null;
+
+    const metadata = this.storage.loadMetadata()[fileName];
+    return {
+      fileName,
+      content,
+      metadata: metadata?.metadata || {},
+      analysis: metadata?.analysis || {},
+    };
   }
 
-  /**
-   * Reprocessa uma transcrição existente (reanálise e regravação formatada).
-   */
   async reprocessTranscription(fileName) {
-    const filePath = path.join(this.transcriptionsDir, fileName);
-    if (!fs.existsSync(filePath)) {
+    if (!this.storage.fileExists(fileName)) {
       return { success: false, message: 'Arquivo de transcrição não encontrado' };
     }
 
-    const metadataAll = this.loadMetadata();
+    const metadataAll = this.storage.loadMetadata();
     const entry = metadataAll[fileName];
     const extraInfo = entry?.metadata || {};
-    const fullContent = fs.readFileSync(filePath, 'utf-8');
-    // Se já estiver formatado, isola apenas a transcrição bruta para não duplicar cabeçalhos
-    const separator = '=== Transcrição ===';
-    const separatorIndex = fullContent.indexOf(separator);
+    const fullContent = this.storage.readText(fileName) || '';
+
+    const separatorIndex = fullContent.indexOf(TRANSCRIPTION_SUMMARY_SEPARATOR);
     const content =
       separatorIndex !== -1
-        ? fullContent.slice(separatorIndex + separator.length).trimStart()
+        ? fullContent.slice(separatorIndex + TRANSCRIPTION_SUMMARY_SEPARATOR.length).trimStart()
         : fullContent;
 
     let analysis = null;
-    let analysisStatus = 'ok';
+    let analysisStatus = ANALYSIS_STATUS.OK;
     let analysisError = null;
+
     try {
-      analysis = await this.analyzeTranscription(content);
+      analysis = await this.aiClient.analyzeText(content);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
-      analysisStatus = 'failed';
+      analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
 
-    if (analysisStatus === 'failed') {
-      return { success: false, fileName, message: analysisError };
+    if (analysisStatus === ANALYSIS_STATUS.FAILED) {
+      return {
+        success: false,
+        fileName,
+        message: analysisError,
+      };
     }
 
-    const formatted = this.formatTranscriptionDocument(content, extraInfo, analysis || {});
-    await this.saveCombinedMetadata(
+    const formatted = formatTranscriptionDocument(content, extraInfo, analysis || {});
+    await this.metadataRepository.saveCombinedMetadata(
       fileName,
       formatted,
       extraInfo,
       analysis,
       analysisStatus,
-      analysisError
+      analysisError,
     );
+    this.storage.writeText(fileName, formatted);
 
-    fs.writeFileSync(filePath, formatted, 'utf-8');
-
-    return { success: true, fileName, analysis };
+    return {
+      success: true,
+      fileName,
+      analysis,
+    };
   }
 }
 
