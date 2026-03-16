@@ -2,6 +2,7 @@ import useRelatoriosData from './Relatorios/hooks/useRelatoriosData';
 import RelatoriosHeader from './Relatorios/components/RelatoriosHeader';
 import RelatoriosCards from './Relatorios/components/RelatoriosCards';
 import RelatoriosSentimento from './Relatorios/components/RelatoriosSentimento';
+import RelatoriosEvolucaoSentimento from './Relatorios/components/RelatoriosEvolucaoSentimento';
 import RelatoriosComparativo from './Relatorios/components/RelatoriosComparativo';
 import RelatoriosCursoTable from './Relatorios/components/RelatoriosCursoTable';
 import RelatoriosHighlights from './Relatorios/components/RelatoriosHighlights';
@@ -22,6 +23,7 @@ export default function Relatorios() {
     maxComparativo,
     handleDownloadOverview,
     handleDownloadOverviewPdf,
+    sentimentsTimeline,
   } = useRelatoriosData();
 
   return (
@@ -49,6 +51,8 @@ export default function Relatorios() {
             <RelatoriosCards overview={overview} solicitacoes={solicitacoes} />
 
             <RelatoriosSentimento sentimentsAvg={overview.sentimentsAvg} />
+
+            <RelatoriosEvolucaoSentimento sentimentsTimeline={sentimentsTimeline} />
 
             <RelatoriosComparativo comparativo={comparativo} maxComparativo={maxComparativo} />
 

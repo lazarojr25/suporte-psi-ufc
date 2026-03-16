@@ -123,6 +123,56 @@ class ReportsService {
     return Array.from(timelineMap.values()).sort((a, b) => a.sortValue - b.sortValue);
   }
 
+  _buildMonthlySentimentTimeline(items = [], dateAccessor) {
+    const timelineMap = new Map();
+
+    for (const item of items) {
+      const dateValue =
+        typeof dateAccessor === 'function'
+          ? dateAccessor(item)
+          : item?.[dateAccessor];
+      const date = this._toDate(dateValue);
+      if (!date) continue;
+
+      const sentiments = item?.analysis?.sentiments;
+      if (!sentiments) continue;
+
+      const period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+      if (!timelineMap.has(period)) {
+        timelineMap.set(period, {
+          period,
+          periodLabel: this.monthLabelFormatter.format(
+            new Date(date.getFullYear(), date.getMonth(), 1),
+          ),
+          count: 0,
+          totalPositive: 0,
+          totalNeutral: 0,
+          totalNegative: 0,
+          sortValue: date.getFullYear() * 100 + (date.getMonth() + 1),
+        });
+      }
+
+      const entry = timelineMap.get(period);
+      entry.count += 1;
+      entry.totalPositive += sentiments.positive || 0;
+      entry.totalNeutral += sentiments.neutral || 0;
+      entry.totalNegative += sentiments.negative || 0;
+    }
+
+    return Array.from(timelineMap.values())
+      .map((entry) => ({
+        ...entry,
+        positive: entry.count > 0 ? entry.totalPositive / entry.count : 0,
+        neutral: entry.count > 0 ? entry.totalNeutral / entry.count : 0,
+        negative: entry.count > 0 ? entry.totalNegative / entry.count : 0,
+      }))
+      .map(({ sortValue, ...entry }) => ({
+        ...entry,
+      }))
+      .sort((a, b) => a.period.localeCompare(b.period));
+  }
+
   _buildPdfBuffer(buildPdf) {
     return new Promise((resolve, reject) => {
       const chunks = [];
@@ -507,6 +557,11 @@ class ReportsService {
       null,
     );
 
+    const sentimentsTimeline = this._buildMonthlySentimentTimeline(
+      allTranscriptions,
+      'createdAt',
+    );
+
     const atendimentosTimeline = timeline.map((entry) => ({
       ...entry,
       type: 'concluidos',
@@ -552,6 +607,7 @@ class ReportsService {
         topKeywords,
         topTopics,
       },
+      sentimentsTimeline,
       timeline,
       periodWithMostRequests,
       solicitacoes: {
@@ -913,8 +969,14 @@ class ReportsService {
   }
 
   async getByDiscenteData(discenteId) {
-    const all = await this.transcriptionService.listTranscriptionsWithMetadata();
-    const filtered = all.filter((t) => t.metadata?.discenteId === discenteId);
+    const filtered = await this.transcriptionService.listTranscriptionsWithMetadata({
+      discenteId,
+    });
+    const orderedTranscriptions = [...filtered].sort((a, b) => {
+      const dateA = this._toDate(a?.createdAt)?.getTime() || 0;
+      const dateB = this._toDate(b?.createdAt)?.getTime() || 0;
+      return dateB - dateA;
+    });
 
     const totalTranscriptions = filtered.length;
     const totalSizeBytes = filtered.reduce(
@@ -944,12 +1006,18 @@ class ReportsService {
       };
     }
 
+    const monthlySentimentTimeline = this._buildMonthlySentimentTimeline(
+      filtered,
+      'createdAt',
+    );
+
     return {
       totalTranscriptions,
       totalSizeBytes,
       sentimentsAvg,
-      transcriptions: filtered,
+      transcriptions: orderedTranscriptions,
       historyPatterns,
+      monthlySentimentTimeline,
     };
   }
 
@@ -1104,32 +1172,30 @@ class ReportsService {
   }
 
   async getAnalytics() {
-    const transcriptions = await this.transcriptionService.listTranscriptions();
+    const transcriptions = await this.transcriptionService.listTranscriptionsWithMetadata();
 
-    if (transcriptions.length === 0) {
+    const withAnalysis = transcriptions.filter(
+      (t) => t?.analysis?.sentiments || t?.analysis?.keywords || t?.analysis?.topics,
+    );
+
+    if (transcriptions.length === 0 || withAnalysis.length === 0) {
       return {
         analytics: null,
-        message: 'Nenhuma transcrição disponível para análise',
+        message: 'Nenhuma transcrição com análise disponível para análise automática',
       };
     }
 
-    const analyticsPromises = transcriptions.slice(-10).map(async (t) => {
-      const transcription = this.transcriptionService.getTranscription(t.fileName);
-      if (transcription && transcription.content) {
-        const analysis = await this.transcriptionService.analyzeTranscription(
-          transcription.content,
-        );
-        return {
-          fileName: t.fileName,
-          createdAt: t.createdAt,
-          analysis,
-        };
-      }
-      return null;
+    const sortedAnalysis = [...withAnalysis].sort((a, b) => {
+      const dateA = this._toDate(a?.createdAt)?.getTime() || 0;
+      const dateB = this._toDate(b?.createdAt)?.getTime() || 0;
+      return dateA - dateB;
     });
 
-    const analyticsResults = await Promise.all(analyticsPromises);
-    const validAnalytics = analyticsResults.filter((a) => a !== null);
+    const validAnalytics = sortedAnalysis.map((item) => ({
+      fileName: item.fileName,
+      createdAt: item.createdAt,
+      analysis: item.analysis,
+    }));
 
     let totalPositive = 0;
     let totalNeutral = 0;
@@ -1137,12 +1203,15 @@ class ReportsService {
     const allKeywords = [];
     const allTopics = [];
 
+    const validForSentiment = validAnalytics.filter((a) => a.analysis?.sentiments);
+
     validAnalytics.forEach((a) => {
       if (a.analysis?.sentiments) {
         totalPositive += a.analysis.sentiments.positive || 0;
         totalNeutral += a.analysis.sentiments.neutral || 0;
         totalNegative += a.analysis.sentiments.negative || 0;
       }
+
       if (a.analysis?.keywords) {
         const normalizedKeywords = Array.isArray(a.analysis.keywords)
           ? a.analysis.keywords
@@ -1155,6 +1224,7 @@ class ReportsService {
           if (value) allKeywords.push(value);
         });
       }
+
       if (a.analysis?.topics) {
         const normalizedTopics = Array.isArray(a.analysis.topics)
           ? a.analysis.topics
@@ -1169,7 +1239,7 @@ class ReportsService {
       }
     });
 
-    const count = validAnalytics.length;
+    const count = validForSentiment.length;
     const avgSentiments =
       count > 0
         ? {
@@ -1206,6 +1276,10 @@ class ReportsService {
         topKeywords,
         topTopics,
         recentAnalytics: validAnalytics.slice(-5),
+        sentimentTimeline: this._buildMonthlySentimentTimeline(
+          validAnalytics,
+          'createdAt',
+        ),
       },
     };
   }

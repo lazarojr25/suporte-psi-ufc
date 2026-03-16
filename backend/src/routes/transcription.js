@@ -37,9 +37,22 @@ try {
 
 const updateMeetingSafe = async (meetingId, payload) => {
   if (!db || !meetingId) return;
-  try {
-    const meetingRef = db.collection('meetings').doc(meetingId);
+
+  const updateIn = async (collectionName) => {
+    const meetingRef = db.collection(collectionName).doc(meetingId);
+    const snap = await meetingRef.get();
+    if (!snap.exists) return false;
     await meetingRef.update(payload);
+    return true;
+  };
+
+  try {
+    const updated =
+      (await updateIn('encontros')) || (await updateIn('meetings'));
+
+    if (!updated) {
+      throw new Error('Encontro não encontrado na coleção nova nem na legada.');
+    }
   } catch (e) {
     console.warn('Não foi possível atualizar meeting:', e?.message);
   }
@@ -189,9 +202,9 @@ router.get('/list', async (req, res) => {
 router.get('/by-discente/:discenteId', async (req, res) => {
   try {
     const { discenteId } = req.params;
-    const all = await transcriptionService.listTranscriptionsWithMetadata();
-
-    const filtered = all.filter((t) => t.metadata?.discenteId === discenteId);
+    const filtered = await transcriptionService.listTranscriptionsWithMetadata({
+      discenteId,
+    });
 
     res.json({
       success: true,
@@ -298,7 +311,7 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
     if (!result.success) {
       if (db && meetingId) {
         try {
-          await db.collection('meetings').doc(meetingId).update({
+          await updateMeetingSafe(meetingId, {
             status: 'erro_transcricao',
             updatedAt: new Date().toISOString(),
           });
@@ -320,7 +333,6 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
 
     if (db && meetingId) {
       try {
-        const meetingRef = db.collection('meetings').doc(meetingId);
         const updatePayload = {
           status: 'concluida',
           updatedAt: new Date().toISOString(),
@@ -331,9 +343,9 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
         if (extraInfo.studentName) updatePayload.studentName = extraInfo.studentName;
         if (extraInfo.curso) updatePayload.curso = extraInfo.curso;
         if (extraInfo.solicitacaoId) updatePayload.solicitacaoId = extraInfo.solicitacaoId;
-        await meetingRef.update(updatePayload);
+        await updateMeetingSafe(meetingId, updatePayload);
       } catch (e) {
-        console.warn('Não foi possível atualizar meeting após upload-text:', e?.message);
+        console.warn('Não foi possível atualizar encontro após upload-text:', e?.message);
       }
     }
 

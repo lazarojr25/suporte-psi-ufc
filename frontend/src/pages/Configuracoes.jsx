@@ -6,17 +6,25 @@ import TranscricaoReprocessSection from './Configuracoes/components/TranscricaoR
 
 export default function Configuracoes() {
   const {
+    periodName,
+    setPeriodName,
     periodStart,
     setPeriodStart,
     periodEnd,
     setPeriodEnd,
     maxSessions,
     setMaxSessions,
+    configList,
+    selectedConfigId,
+    setSelectedConfigId,
+    activeConfigId,
+    activating,
     loading,
     saving,
     error,
     success,
     role,
+    handleActivateExisting,
     reprocessMsg,
     reprocessErr,
     reprocessing,
@@ -29,16 +37,24 @@ export default function Configuracoes() {
       <ConfiguracoesHeader />
 
       <AttendanceConfigForm
+        activeConfigId={activeConfigId}
         loading={loading}
         saving={saving}
         error={error}
         success={success}
+        periodName={periodName}
+        setPeriodName={setPeriodName}
         periodStart={periodStart}
         setPeriodStart={setPeriodStart}
         periodEnd={periodEnd}
         setPeriodEnd={setPeriodEnd}
         maxSessions={maxSessions}
         setMaxSessions={setMaxSessions}
+        configList={configList}
+        selectedConfigId={selectedConfigId}
+        setSelectedConfigId={setSelectedConfigId}
+        activating={activating}
+        onActivateExisting={handleActivateExisting}
         onSubmit={handleSave}
       />
 

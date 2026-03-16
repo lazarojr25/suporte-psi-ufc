@@ -88,7 +88,10 @@ export const enrichExtraInfoFromMeeting = async (
   if (!db || !meetingId) return extraInfo;
 
   try {
-    const snap = await db.collection('meetings').doc(meetingId).get();
+    let snap = await db.collection('encontros').doc(meetingId).get();
+    if (!snap.exists) {
+      snap = await db.collection('meetings').doc(meetingId).get();
+    }
     if (snap.exists) {
       const data = snap.data() || {};
       extraInfo.discenteId = extraInfo.discenteId || data.discenteId || null;

@@ -8,6 +8,7 @@ export default function DiscenteDetalheRelatorios({
   setSelectedTranscription,
   sentimentTimeline,
   historyPatterns,
+  monthlySentimentTimeline,
   downloadingDiscenteReport,
   downloadingDiscenteReportPdf,
   onDownloadTxt,
@@ -96,6 +97,35 @@ export default function DiscenteDetalheRelatorios({
                   Array.isArray(historyPatterns?.[section.key]) &&
                   historyPatterns[section.key].length > 0,
               ) && <p className="text-gray-500">Nenhum padrão identificado até o momento.</p>}
+            </div>
+          )}
+
+          {monthlySentimentTimeline.length > 0 && (
+            <div className="mb-4 border rounded-lg p-3 sm:p-4 bg-white text-xs sm:text-sm space-y-2">
+              <h3 className="font-semibold text-gray-800">Evolução mensal de sentimentos</h3>
+              <div className="space-y-2">
+                {monthlySentimentTimeline.map((entry) => {
+                  const positive = Math.round((entry.positive || 0) * 100);
+                  const neutral = Math.round((entry.neutral || 0) * 100);
+                  const negative = Math.round((entry.negative || 0) * 100);
+                  return (
+                    <div key={entry.period} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs text-gray-700">
+                        <span className="font-semibold text-gray-900">{entry.periodLabel}</span>
+                        <span>
+                          {positive}% + / {neutral}% ~ / {negative}% -
+                        </span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden flex">
+                        <div className="bg-emerald-500 h-full" style={{ width: `${Math.min(100, Math.max(0, positive))}%` }} />
+                        <div className="bg-amber-400 h-full" style={{ width: `${Math.min(100, Math.max(0, neutral))}%` }} />
+                        <div className="bg-rose-500 h-full" style={{ width: `${Math.min(100, Math.max(0, negative))}%` }} />
+                      </div>
+                      <p className="text-[11px] text-gray-500">Transcrições com análise: {entry.count}</p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
