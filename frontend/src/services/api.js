@@ -311,6 +311,13 @@ class ApiService {
       body: JSON.stringify(payload),
     });
   }
+
+  async activateAttendanceConfig(configId) {
+    return this.request('/attendance-config', {
+      method: 'PUT',
+      body: JSON.stringify({ configId, setActive: true }),
+    });
+  }
   
   
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDoc,
   collection,
@@ -161,6 +161,10 @@ export default function useDiscenteDetalheData(discenteId, options = {}) {
     }));
 
   const historyPatterns = relatorioDiscente?.historyPatterns;
+  const monthlySentimentTimeline = useMemo(
+    () => relatorioDiscente?.monthlySentimentTimeline || [],
+    [relatorioDiscente?.monthlySentimentTimeline],
+  );
 
   const now = new Date();
   const meetingsDiscente = allMeetings
@@ -356,6 +360,7 @@ export default function useDiscenteDetalheData(discenteId, options = {}) {
     lastTranscription,
     sentimentTimeline,
     historyPatterns,
+    monthlySentimentTimeline,
     error,
     downloadingDiscenteReport,
     downloadingDiscenteReportPdf,

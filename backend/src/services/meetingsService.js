@@ -28,6 +28,9 @@ function overlaps(candidateStart, candidateDur, existingStart, existingDur) {
   return candidateStart < existingEnd && existingStart < candidateEnd;
 }
 
+const MEETINGS_COLLECTION = 'encontros';
+const LEGACY_MEETINGS_COLLECTIONS = ['meetings'];
+
 class MeetingsService {
   constructor(db) {
     this.db = db;
@@ -41,26 +44,76 @@ class MeetingsService {
     }
   }
 
+  _meetingCollections() {
+    return [MEETINGS_COLLECTION, ...LEGACY_MEETINGS_COLLECTIONS];
+  }
+
+  async _collectMeetings(buildQuery) {
+    const collections = this._meetingCollections();
+    const snapshots = await Promise.all(
+      collections.map(async (collectionName) => {
+        const ref = this.db.collection(collectionName);
+        const queryRef = buildQuery(ref);
+        const snapshot = await queryRef.get();
+        return snapshot.docs;
+      }),
+    );
+
+    const byId = new Map();
+
+    snapshots.forEach((docs) => {
+      docs.forEach((doc) => {
+        if (!byId.has(doc.id)) {
+          byId.set(doc.id, mapMeetingDoc(doc));
+        }
+      });
+    });
+
+    return Array.from(byId.values());
+  }
+
+  async _findMeetingDocById(meetingId) {
+    for (const collectionName of this._meetingCollections()) {
+      const ref = this.db.collection(collectionName).doc(meetingId);
+      const snap = await ref.get();
+      if (snap.exists) {
+        return {
+          collectionName,
+          ref,
+          snap,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async _meetingForSolicitacaoExists(solicitacaoId) {
+    const query = await this._collectMeetings((ref) =>
+      ref.where('solicitacaoId', '==', solicitacaoId),
+    );
+    return query.length > 0;
+  }
+
   async listMeetings({ status, date }) {
     this._requireDb();
-    let ref = this.db.collection('meetings');
+    const meetings = await this._collectMeetings((ref) => {
+      let query = ref;
+      if (status) {
+        query = query.where('status', '==', status);
+      }
+      return query;
+    });
 
-    if (status) {
-      ref = ref.where('status', '==', status);
-    }
-
-    const snapshot = await ref.get();
-    let meetings = snapshot.docs.map(mapMeetingDoc);
-
-    if (date) {
-      meetings = meetings.filter((m) => m.scheduledDate === date);
-    }
+    const filtered = date
+      ? meetings.filter((m) => m.scheduledDate === date)
+      : meetings;
 
     return {
       success: true,
       data: {
-        meetings,
-        total: meetings.length,
+        meetings: filtered,
+        total: filtered.length,
       },
     };
   }
@@ -99,8 +152,8 @@ class MeetingsService {
       .doc(solicitacaoId);
     const solicitacaoSnap = await solicitacaoRef.get();
     if (solicitacaoSnap.exists) {
-      const statusRaw = (solicitacaoSnap.data()?.status || '').
-        toString()
+      const statusRaw = (solicitacaoSnap.data()?.status || '')
+        .toString()
         .toLowerCase();
       if (statusRaw.includes('encontro agendado')) {
         return {
@@ -111,11 +164,8 @@ class MeetingsService {
       }
     }
 
-    const existingSnap = await this.db
-      .collection('meetings')
-      .where('solicitacaoId', '==', solicitacaoId)
-      .get();
-    if (!existingSnap.empty) {
+    const existingMeeting = await this._meetingForSolicitacaoExists(solicitacaoId);
+    if (existingMeeting) {
       return {
         success: false,
         statusCode: 409,
@@ -146,7 +196,7 @@ class MeetingsService {
       clinicalRecord: null,
     };
 
-    const docRef = await this.db.collection('meetings').add(newMeeting);
+    const docRef = await this.db.collection(MEETINGS_COLLECTION).add(newMeeting);
 
     const calendarStatus = { success: true, message: null };
     try {
@@ -173,7 +223,7 @@ class MeetingsService {
           'Não foi possível criar o evento no Google Calendar.';
       }
     } catch (calErr) {
-      console.warn('Falha ao criar Meet para o meeting:', calErr?.message);
+      console.warn('Falha ao criar Meet para o encontro:', calErr?.message);
       calendarStatus.success = false;
       calendarStatus.message =
         calErr?.message || 'Não foi possível criar o evento no Google Calendar.';
@@ -198,7 +248,7 @@ Se não foi você, ignore esta mensagem.`;
         });
       }
     } catch (mailErr) {
-      console.warn('Falha ao enviar e-mail do meeting:', mailErr?.message);
+      console.warn('Falha ao enviar e-mail do encontro:', mailErr?.message);
     }
 
     const saved = { id: docRef.id, ...newMeeting };
@@ -210,7 +260,7 @@ Se não foi você, ignore esta mensagem.`;
       );
     } catch (sErr) {
       console.warn(
-        'Falha ao atualizar status da solicitação após criar meeting:',
+        'Falha ao atualizar status da solicitação após criar encontro:',
         sErr?.message,
       );
     }
@@ -218,7 +268,7 @@ Se não foi você, ignore esta mensagem.`;
     return {
       success: true,
       statusCode: 201,
-      message: 'Reunião agendada com sucesso',
+      message: 'Encontro agendado com sucesso',
       data: saved,
       calendar: calendarStatus,
     };
@@ -238,15 +288,11 @@ Se não foi você, ignore esta mensagem.`;
       workingHours.push(`${hours}:${mins}`);
     }
 
-    const snapshot = await this.db
-      .collection('meetings')
-      .where('scheduledDate', '==', date)
-      .get();
+    const meetings = await this._collectMeetings((ref) =>
+      ref.where('scheduledDate', '==', date),
+    );
 
-    const occupiedDocs = snapshot.docs
-      .map((doc) => doc.data())
-      .filter((m) => m.status !== 'cancelada');
-
+    const occupiedDocs = meetings.filter((m) => m.status !== 'cancelada');
     const occupiedSlots = occupiedDocs.map((m) => m.scheduledTime);
 
     const availableSlots = workingHours.filter((slot) => {
@@ -303,15 +349,13 @@ Se não foi você, ignore esta mensagem.`;
       periodStart = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
     }
 
-    const snapshot = await this.db
-      .collection('meetings')
-      .where('discenteId', '==', discenteId)
-      .get();
+    const meetings = await this._collectMeetings((ref) =>
+      ref.where('discenteId', '==', discenteId),
+    );
 
     let countInPeriod = 0;
 
-    snapshot.forEach((docSnap) => {
-      const m = docSnap.data() || {};
+    meetings.forEach((m) => {
       if (m.status !== 'concluida') return;
 
       let d;
@@ -349,33 +393,31 @@ Se não foi você, ignore esta mensagem.`;
 
   async getById(id) {
     this._requireDb();
-    const docRef = this.db.collection('meetings').doc(id);
-    const snap = await docRef.get();
+    const meetingRef = await this._findMeetingDocById(id);
 
-    if (!snap.exists) {
+    if (!meetingRef) {
       return {
         success: false,
         statusCode: 404,
-        message: 'Reunião não encontrada',
+        message: 'Encontro não encontrado',
       };
     }
 
     return {
       success: true,
-      data: mapMeetingDoc(snap),
+      data: mapMeetingDoc(meetingRef.snap),
     };
   }
 
   async updateMeeting(id, payload) {
     this._requireDb();
-    const docRef = this.db.collection('meetings').doc(id);
-    const snap = await docRef.get();
+    const meetingRef = await this._findMeetingDocById(id);
 
-    if (!snap.exists) {
+    if (!meetingRef) {
       return {
         success: false,
         statusCode: 404,
-        message: 'Reunião não encontrada',
+        message: 'Encontro não encontrado',
       };
     }
 
@@ -391,7 +433,7 @@ Se não foi você, ignore esta mensagem.`;
       clinicalRecord,
     } = payload;
 
-    const current = snap.data() || {};
+    const current = meetingRef.snap.data() || {};
     const updates = {
       updatedAt: new Date().toISOString(),
     };
@@ -434,15 +476,15 @@ Se não foi você, ignore esta mensagem.`;
         }
       }
     } catch (calErr) {
-      console.warn('Falha ao atualizar Meet do meeting:', calErr?.message);
+      console.warn('Falha ao atualizar Meet do encontro:', calErr?.message);
       calendarStatus.success = false;
       calendarStatus.message = calErr?.message ||
         'Não foi possível atualizar o evento no Google Calendar.';
     }
 
-    await docRef.update(updates);
+    await meetingRef.ref.update(updates);
 
-    const updatedSnap = await docRef.get();
+    const updatedSnap = await meetingRef.ref.get();
     const updatedData = mapMeetingDoc(updatedSnap);
 
     try {
@@ -464,12 +506,12 @@ Se não foi você, ignore esta mensagem.`;
         });
       }
     } catch (mailErr) {
-      console.warn('Falha ao enviar e-mail do meeting (update):', mailErr?.message);
+      console.warn('Falha ao enviar e-mail do encontro (update):', mailErr?.message);
     }
 
     return {
       success: true,
-      message: 'Reunião atualizada com sucesso',
+      message: 'Encontro atualizado com sucesso',
       data: updatedData,
       calendar: calendarStatus,
     };
@@ -477,14 +519,13 @@ Se não foi você, ignore esta mensagem.`;
 
   async cancelMeeting(id) {
     this._requireDb();
-    const docRef = this.db.collection('meetings').doc(id);
-    const snap = await docRef.get();
+    const meetingRef = await this._findMeetingDocById(id);
 
-    if (!snap.exists) {
+    if (!meetingRef) {
       return {
         success: false,
         statusCode: 404,
-        message: 'Reunião não encontrada',
+        message: 'Encontro não encontrado',
       };
     }
 
@@ -493,13 +534,13 @@ Se não foi você, ignore esta mensagem.`;
       cancelledAt: new Date().toISOString(),
     };
 
-    await docRef.update(updates);
+    await meetingRef.ref.update(updates);
 
-    const updatedSnap = await docRef.get();
+    const updatedSnap = await meetingRef.ref.get();
 
     return {
       success: true,
-      message: 'Reunião cancelada com sucesso',
+      message: 'Encontro cancelado com sucesso',
       data: mapMeetingDoc(updatedSnap),
     };
   }
@@ -507,14 +548,13 @@ Se não foi você, ignore esta mensagem.`;
   async completeMeeting(id, payload) {
     this._requireDb();
     const { transcriptionId, notes } = payload;
-    const docRef = this.db.collection('meetings').doc(id);
-    const snap = await docRef.get();
+    const meetingRef = await this._findMeetingDocById(id);
 
-    if (!snap.exists) {
+    if (!meetingRef) {
       return {
         success: false,
         statusCode: 404,
-        message: 'Reunião não encontrada',
+        message: 'Encontro não encontrado',
       };
     }
 
@@ -526,13 +566,13 @@ Se não foi você, ignore esta mensagem.`;
     if (transcriptionId) updates.transcriptionId = transcriptionId;
     if (notes) updates.completionNotes = notes;
 
-    await docRef.update(updates);
+    await meetingRef.ref.update(updates);
 
-    const updatedSnap = await docRef.get();
+    const updatedSnap = await meetingRef.ref.get();
 
     return {
       success: true,
-      message: 'Reunião marcada como concluída',
+      message: 'Encontro marcado como concluído',
       data: mapMeetingDoc(updatedSnap),
     };
   }

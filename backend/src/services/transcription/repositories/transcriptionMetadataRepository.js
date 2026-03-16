@@ -2,6 +2,7 @@ import {
   saveTranscriptionMetadata,
   getAllTranscriptionsMetadata,
   deleteTranscriptionMetadata,
+  getTranscriptionsByDiscenteId,
 } from '../../firestoreService.js';
 
 export default class TranscriptionMetadataRepository {
@@ -9,9 +10,15 @@ export default class TranscriptionMetadataRepository {
     this.storage = storage;
   }
 
-  async list() {
+  async list(filters = {}) {
+    const { discenteId } = filters;
     try {
-      const firestoreMetadata = await getAllTranscriptionsMetadata();
+      let firestoreMetadata = [];
+      if (discenteId) {
+        firestoreMetadata = await getTranscriptionsByDiscenteId(discenteId);
+      } else {
+        firestoreMetadata = await getAllTranscriptionsMetadata();
+      }
       if (Array.isArray(firestoreMetadata) && firestoreMetadata.length > 0) {
         return firestoreMetadata;
       }

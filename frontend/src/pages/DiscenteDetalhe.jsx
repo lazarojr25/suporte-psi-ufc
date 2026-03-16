@@ -24,6 +24,7 @@ export default function DiscenteDetalhe() {
     lastTranscription,
     sentimentTimeline,
     historyPatterns,
+    monthlySentimentTimeline,
     error,
     downloadingDiscenteReport,
     downloadingDiscenteReportPdf,
@@ -100,6 +101,7 @@ export default function DiscenteDetalhe() {
         setSelectedTranscription={setSelectedTranscription}
         sentimentTimeline={sentimentTimeline}
         historyPatterns={historyPatterns}
+        monthlySentimentTimeline={monthlySentimentTimeline}
         downloadingDiscenteReport={downloadingDiscenteReport}
         downloadingDiscenteReportPdf={downloadingDiscenteReportPdf}
         onDownloadTxt={handleDownloadDiscenteReport}

@@ -89,13 +89,17 @@ class TranscriptionMediaJobService {
 
     this.reprocessLocks.add(discenteId);
     try {
-      const list = await this.transcriptionService.listTranscriptionsWithMetadata();
-      const filtered = list.filter(
-        (t) => t.metadata?.discenteId === discenteId && shouldReprocessEntry(t, force),
-      );
+      const list = await this.transcriptionService.listTranscriptionsWithMetadata({
+        discenteId,
+      });
+      const filtered = list.filter((t) => shouldReprocessEntry(t, force));
 
-      for (const item of filtered) {
-        await this.transcriptionService.reprocessTranscription(item.fileName);
+      const concurrency = Number(process.env.REPROCESS_PARALLELISM || 4);
+      for (let i = 0; i < filtered.length; i += concurrency) {
+        const batch = filtered.slice(i, i + concurrency);
+        await Promise.all(
+          batch.map((item) => this.transcriptionService.reprocessTranscription(item.fileName)),
+        );
       }
 
       console.log(
@@ -282,13 +286,20 @@ class TranscriptionMediaJobService {
         : list.filter((t) => shouldReprocessEntry(t, force));
 
       const results = [];
-      for (const item of filtered) {
-        const r = await this.transcriptionService.reprocessTranscription(item.fileName);
-        results.push({
-          fileName: item.fileName,
-          success: r.success,
-          message: r.message || null,
-        });
+      const concurrency = Number(process.env.REPROCESS_PARALLELISM || 4);
+      for (let i = 0; i < filtered.length; i += concurrency) {
+        const batch = filtered.slice(i, i + concurrency);
+        const batchResults = await Promise.all(
+          batch.map(async (item) => {
+            const r = await this.transcriptionService.reprocessTranscription(item.fileName);
+            return {
+              fileName: item.fileName,
+              success: r.success,
+              message: r.message || null,
+            };
+          }),
+        );
+        results.push(...batchResults);
       }
 
       return {

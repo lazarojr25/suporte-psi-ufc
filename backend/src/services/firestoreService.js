@@ -2,8 +2,42 @@ import { getAdminDb } from '../firebaseAdmin.js';
 
 const db = getAdminDb();
 
-// Coleção onde os metadados e análises das transcrições serão salvos
-const TRANSCRIPTIONS_COLLECTION = 'transcriptions_metadata';
+const PRIMARY_COLLECTION = 'metadados_transcricoes';
+const LEGACY_COLLECTIONS = ['transcriptions_metadata'];
+
+const fetchSnapshots = async (queryBuilder) => {
+  const collections = [PRIMARY_COLLECTION, ...LEGACY_COLLECTIONS];
+  const snapshots = await Promise.all(
+    collections.map((collectionName) => {
+      const ref = queryBuilder(db.collection(collectionName));
+      return ref.get();
+    }),
+  );
+  return snapshots;
+};
+
+const readAndDeduplicateDocs = (snapshots) => {
+  const byId = new Map();
+
+  snapshots.forEach((snapshot) => {
+    snapshot.forEach((doc) => {
+      if (!byId.has(doc.id)) {
+        byId.set(doc.id, { id: doc.id, ...doc.data() });
+      }
+    });
+  });
+
+  return Array.from(byId.values());
+};
+
+const readTranscriptionMetadata = async (queryBuilder) => {
+  try {
+    const snapshots = await fetchSnapshots(queryBuilder);
+    return readAndDeduplicateDocs(snapshots);
+  } catch (error) {
+    throw error;
+  }
+};
 
 /**
  * Salva os metadados e a análise de uma transcrição no Firestore.
@@ -21,16 +55,31 @@ export async function saveTranscriptionMetadata(data) {
   try {
     if (data?.fileName) {
       const safeId = data.fileName.replace(/[\/#?]+/g, '_');
-      await db.collection(TRANSCRIPTIONS_COLLECTION).doc(safeId).set(data, { merge: true });
-      console.log(`Metadados de transcrição salvos no Firestore com ID: ${safeId}`);
+      await db
+        .collection(PRIMARY_COLLECTION)
+        .doc(safeId)
+        .set(data, { merge: true });
+
+      // Mantém o legado para compatibilidade durante a migração da coleção.
+      await db
+        .collection(LEGACY_COLLECTIONS[0])
+        .doc(safeId)
+        .set(data, { merge: true });
+
+      console.log(
+        `Metadados de transcrição salvos no Firestore com ID: ${safeId}`,
+      );
       return safeId;
     }
 
-    const docRef = await db.collection(TRANSCRIPTIONS_COLLECTION).add(data);
+    const docRef = await db.collection(PRIMARY_COLLECTION).add(data);
     console.log(`Metadados de transcrição salvos no Firestore com ID: ${docRef.id}`);
     return docRef.id;
   } catch (error) {
-    console.error('ERRO ao salvar metadados no Firestore. Verifique a inicialização do Firebase Admin SDK.', error);
+    console.error(
+      'ERRO ao salvar metadados no Firestore. Verifique a inicialização do Firebase Admin SDK.',
+      error,
+    );
     // Em caso de falha, retorna um ID simulado para não quebrar o fluxo
     return `simulated-id-${Date.now()}`;
   }
@@ -43,11 +92,10 @@ export async function saveTranscriptionMetadata(data) {
  */
 export async function getTranscriptionsByDiscenteId(discenteId) {
   try {
-    const snapshot = await db.collection(TRANSCRIPTIONS_COLLECTION)
-      .where('metadata.discenteId', '==', discenteId)
-      .get();
-
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const queryBuilder = (ref) =>
+      ref.where('metadata.discenteId', '==', discenteId);
+    const docs = await readTranscriptionMetadata(queryBuilder);
+    return docs.filter((doc) => doc?.metadata?.discenteId === discenteId);
   } catch (error) {
     console.error('ERRO ao buscar metadados no Firestore.', error);
     return [];
@@ -60,8 +108,8 @@ export async function getTranscriptionsByDiscenteId(discenteId) {
  */
 export async function getAllTranscriptionsMetadata() {
   try {
-    const snapshot = await db.collection(TRANSCRIPTIONS_COLLECTION).get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const queryBuilder = (ref) => ref;
+    return await readTranscriptionMetadata(queryBuilder);
   } catch (error) {
     console.error('ERRO ao buscar todos os metadados no Firestore.', error);
     return [];
@@ -74,9 +122,16 @@ export async function getAllTranscriptionsMetadata() {
  */
 export async function deleteTranscriptionMetadata(fileName) {
   if (!fileName) return;
+  const safeId = fileName.replace(/[\/#?]+/g, '_');
+
   try {
-    const safeId = fileName.replace(/[\/#?]+/g, '_');
-    await db.collection(TRANSCRIPTIONS_COLLECTION).doc(safeId).delete();
+    await db.collection(PRIMARY_COLLECTION).doc(safeId).delete();
+    await db
+      .collection(LEGACY_COLLECTIONS[0])
+      .doc(safeId)
+      .delete()
+      .catch(() => {});
+
     console.log(`Metadados de transcrição removidos do Firestore: ${safeId}`);
   } catch (error) {
     console.error('ERRO ao remover metadados no Firestore.', error);

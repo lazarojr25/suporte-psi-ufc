@@ -25,6 +25,15 @@ export default class AttendanceConfigService {
   async updateConfig(partial = {}) {
     try {
       const data = await updateAttendanceConfig(partial || {});
+      if (data?.error) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: data.error,
+          data,
+        };
+      }
+
       return {
         success: true,
         message: 'Configuração de atendimento atualizada com sucesso.',

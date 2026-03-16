@@ -149,8 +149,8 @@ class TranscriptionService {
     return await this.aiClient.analyzeText(text);
   }
 
-  async listTranscriptionsWithMetadata() {
-    return this.metadataRepository.list();
+  async listTranscriptionsWithMetadata(filters = {}) {
+    return this.metadataRepository.list(filters);
   }
 
   async listTranscriptions() {

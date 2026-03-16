@@ -8,6 +8,7 @@ export default function useRelatoriosData() {
   const [byCourse, setByCourse] = useState([]);
   const [highlights, setHighlights] = useState({ topKeywords: [], topTopics: [] });
   const [timeline, setTimeline] = useState([]);
+  const [sentimentsTimeline, setSentimentsTimeline] = useState([]);
   const [solicitacoes, setSolicitacoes] = useState({ total: 0, timeline: [], peak: null });
   const [comparativo, setComparativo] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +26,7 @@ export default function useRelatoriosData() {
           setOverview(res.overview);
           setByCourse(res.byCourse || []);
           setHighlights(res.highlights || { topKeywords: [], topTopics: [] });
+          setSentimentsTimeline(res.sentimentsTimeline || []);
           setTimeline(res.timeline || []);
           setSolicitacoes(res.solicitacoes || { total: 0, timeline: [], peak: null });
           setComparativo(res.comparativo || []);
@@ -42,16 +44,17 @@ export default function useRelatoriosData() {
     load();
   }, []);
 
-  const hasData = useMemo(() => {
-    return (
-      !!overview &&
-      ((overview.totalTranscriptions || 0) > 0 ||
-        (overview.totalStudents || 0) > 0 ||
-        (solicitacoes.total || 0) > 0 ||
-        (timeline?.length || 0) > 0 ||
-        (byCourse?.length || 0) > 0)
-    );
-  }, [overview, solicitacoes.total, timeline.length, byCourse.length]);
+    const hasData = useMemo(() => {
+      return (
+        !!overview &&
+        ((overview.totalTranscriptions || 0) > 0 ||
+          (overview.totalStudents || 0) > 0 ||
+          (solicitacoes.total || 0) > 0 ||
+          (sentimentsTimeline.length || 0) > 0 ||
+          (timeline?.length || 0) > 0 ||
+          (byCourse?.length || 0) > 0)
+      );
+    }, [overview, solicitacoes.total, sentimentsTimeline.length, timeline.length, byCourse.length]);
 
   const maxCourseCount = useMemo(
     () => getMaxTimeline(byCourse, 'count'),
@@ -117,5 +120,6 @@ export default function useRelatoriosData() {
     maxComparativo,
     handleDownloadOverview,
     handleDownloadOverviewPdf,
+    sentimentsTimeline,
   };
 }
