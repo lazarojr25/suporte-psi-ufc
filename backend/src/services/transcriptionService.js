@@ -10,6 +10,7 @@ import { formatTranscriptionDocument } from './transcription/utils/transcription
 import TranscriptionStorage from './transcription/storage/transcriptionStorage.js';
 import TranscriptionAiClient from './transcription/clients/transcriptionAiClient.js';
 import TranscriptionMetadataRepository from './transcription/repositories/transcriptionMetadataRepository.js';
+import { TRANSCRIPTION_ANALYSIS_PROMPT_VERSION } from './transcription/utils/transcriptionPrompt.js';
 
 dotenv.config();
 
@@ -23,6 +24,51 @@ class TranscriptionService {
     this.aiClient = new TranscriptionAiClient({
       modelName: process.env.GEMINI_MODEL || DEFAULT_MODEL,
     });
+  }
+
+  _normalizeAnalysis(analysis = null, fallbackError = null) {
+    if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
+      return fallbackError
+        ? {
+            schemaVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+            model: this.aiClient.modelName,
+            summary: `Falha ao gerar análise automática: ${fallbackError}`,
+            sentiments: {
+              positive: 0,
+              neutral: 1,
+              negative: 0,
+            },
+            summaryConfidence: 0,
+            keywords: [],
+            topics: [],
+            actionableInsights: [],
+            riskSignals: [],
+            uncertainty: {
+              nivel: 'alto',
+              motivos: ['Falha durante análise automática'],
+            },
+            humanReviewRequired: true,
+          }
+        : null;
+    }
+
+    return {
+      schemaVersion: analysis.schemaVersion || TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+      model: analysis.model || this.aiClient.modelName,
+      summary: analysis.summary || '',
+      sentiments: analysis.sentiments || { positive: 0, neutral: 0, negative: 0 },
+      summaryConfidence:
+        typeof analysis.summaryConfidence === 'number' ? analysis.summaryConfidence : null,
+      keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
+      topics: Array.isArray(analysis.topics) ? analysis.topics : [],
+      actionableInsights: Array.isArray(analysis.actionableInsights)
+        ? analysis.actionableInsights
+        : [],
+      riskSignals: Array.isArray(analysis.riskSignals) ? analysis.riskSignals : [],
+      uncertainty: analysis.uncertainty || null,
+      humanReviewRequired: Boolean(analysis.humanReviewRequired),
+      ...analysis,
+    };
   }
 
   async deleteTranscription(fileName) {
@@ -75,19 +121,24 @@ class TranscriptionService {
       analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
+    const normalizedAnalysis = this._normalizeAnalysis(analysis, analysisError);
 
     const formatted = formatTranscriptionDocument(
       transcriptionText,
       extraInfo,
-      analysis || {},
+      normalizedAnalysis || {},
     );
     const metadata = await this.metadataRepository.saveCombinedMetadata(
       outputFileName,
       formatted,
       extraInfo,
-      analysis,
+      normalizedAnalysis,
       analysisStatus,
       analysisError,
+      {
+        model: this.aiClient.modelName,
+        promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+      },
     );
 
     this.storage.writeText(outputFileName, formatted);
@@ -96,7 +147,7 @@ class TranscriptionService {
       success: analysisStatus !== ANALYSIS_STATUS.FAILED,
       error: analysisStatus === ANALYSIS_STATUS.FAILED ? analysisError : null,
       transcription: transcriptionText,
-      analysis,
+      analysis: normalizedAnalysis,
       analysisStatus,
       analysisError,
       metadata,
@@ -116,19 +167,24 @@ class TranscriptionService {
       analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
+    const normalizedAnalysis = this._normalizeAnalysis(analysis, analysisError);
 
     const formatted = formatTranscriptionDocument(
       mergedText,
       extraInfo,
-      analysis || {},
+      normalizedAnalysis || {},
     );
     const metadata = await this.metadataRepository.saveCombinedMetadata(
       outputFileName,
       formatted,
       extraInfo,
-      analysis,
+      normalizedAnalysis,
       analysisStatus,
       analysisError,
+      {
+        model: this.aiClient.modelName,
+        promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+      },
     );
 
     this.storage.writeText(outputFileName, formatted);
@@ -137,7 +193,7 @@ class TranscriptionService {
       success: analysisStatus !== ANALYSIS_STATUS.FAILED,
       error: analysisStatus === ANALYSIS_STATUS.FAILED ? analysisError : null,
       transcription: mergedText,
-      analysis,
+      analysis: normalizedAnalysis,
       analysisStatus,
       analysisError,
       metadata,
@@ -146,7 +202,7 @@ class TranscriptionService {
   }
 
   async analyzeTranscription(text) {
-    return await this.aiClient.analyzeText(text);
+    return this._normalizeAnalysis(await this.aiClient.analyzeText(text));
   }
 
   async listTranscriptionsWithMetadata(filters = {}) {
@@ -211,21 +267,26 @@ class TranscriptionService {
       };
     }
 
-    const formatted = formatTranscriptionDocument(content, extraInfo, analysis || {});
+    const normalizedAnalysis = this._normalizeAnalysis(analysis, analysisError);
+    const formatted = formatTranscriptionDocument(content, extraInfo, normalizedAnalysis || {});
     await this.metadataRepository.saveCombinedMetadata(
       fileName,
       formatted,
       extraInfo,
-      analysis,
+      normalizedAnalysis,
       analysisStatus,
       analysisError,
+      {
+        model: this.aiClient.modelName,
+        promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+      },
     );
     this.storage.writeText(fileName, formatted);
 
     return {
       success: true,
       fileName,
-      analysis,
+      analysis: normalizedAnalysis,
     };
   }
 }

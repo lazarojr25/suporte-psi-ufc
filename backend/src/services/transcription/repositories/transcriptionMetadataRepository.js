@@ -33,6 +33,8 @@ export default class TranscriptionMetadataRepository {
   }
 
   async saveCombinedMetadata(fileName, content, extraInfo, analysis, analysisStatus = 'ok', analysisError = null) {
+    const analysisMetadata = arguments[6] || {};
+
     const entry = {
       fileName,
       size: content.length,
@@ -41,6 +43,13 @@ export default class TranscriptionMetadataRepository {
       analysis,
       analysisStatus,
       analysisError,
+      analysisMetadata: {
+        ...(analysisMetadata.model ? { model: analysisMetadata.model } : {}),
+        ...(analysisMetadata.promptVersion
+          ? { promptVersion: analysisMetadata.promptVersion }
+          : {}),
+        analyzedAt: new Date().toISOString(),
+      },
     };
 
     try {

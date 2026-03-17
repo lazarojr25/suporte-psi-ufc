@@ -6,6 +6,8 @@ export default function MeetingDetalheAnotacoes({
   onInformalNotesChange,
   onSave,
   saving,
+  saveMsg,
+  saveErr,
 }) {
   return (
     <div className="bg-white rounded-xl shadow p-4 space-y-3">
@@ -24,6 +26,8 @@ export default function MeetingDetalheAnotacoes({
         className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring focus:border-blue-300"
         placeholder="Notas rápidas desta sessão."
       />
+      {saveMsg && <span className="text-[11px] text-green-600">{saveMsg}</span>}
+      {saveErr && <span className="text-[11px] text-red-600">{saveErr}</span>}
       <button
         type="button"
         onClick={onSave}
