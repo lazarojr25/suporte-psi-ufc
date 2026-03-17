@@ -3,6 +3,7 @@ import {
   getAllTranscriptionsMetadata,
   deleteTranscriptionMetadata,
   getTranscriptionsByDiscenteId,
+  markReportsOverviewCacheDirty,
 } from '../../firestoreService.js';
 
 export default class TranscriptionMetadataRepository {
@@ -67,6 +68,8 @@ export default class TranscriptionMetadataRepository {
     const metadata = this.storage.loadMetadata();
     metadata[fileName] = entry;
     this.storage.saveMetadata(metadata);
+
+    markReportsOverviewCacheDirty();
 
     return entry;
   }

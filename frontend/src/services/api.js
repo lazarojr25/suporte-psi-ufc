@@ -188,8 +188,18 @@ class ApiService {
   }
 
   // ------------------ Relatórios ------------------
-  async getReportsOverview() {
-    return this.request('/reports/overview');
+  async getReportsOverview(params = {}) {
+    const query = Object.entries({
+      from: null,
+      to: null,
+      forceRefresh: null,
+      ...params,
+    })
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join('&');
+
+    return this.request(`/reports/overview${query ? `?${query}` : ''}`);
   }
 
   async getReportsAnalytics() {
@@ -203,10 +213,18 @@ class ApiService {
     return res.blob();
   }
 
-  async exportReportsOverview() {
+  async exportReportsOverview(params = {}) {
+    const query = Object.entries({
+      from: null,
+      to: null,
+      ...params,
+    })
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join('&');
     const token = await this.getAuthToken();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const res = await fetch(`${this.baseURL}/reports/overview/export`, { headers });
+    const res = await fetch(`${this.baseURL}/reports/overview/export${query ? `?${query}` : ''}`, { headers });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const contentDisposition = res.headers.get('content-disposition') || '';
     let fileName = null;
@@ -218,10 +236,18 @@ class ApiService {
     return { blob, fileName };
   }
 
-  async exportReportsOverviewPdf() {
+  async exportReportsOverviewPdf(params = {}) {
+    const query = Object.entries({
+      from: null,
+      to: null,
+      ...params,
+    })
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join('&');
     const token = await this.getAuthToken();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf`, { headers });
+    const res = await fetch(`${this.baseURL}/reports/overview/export-pdf${query ? `?${query}` : ''}`, { headers });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const contentDisposition = res.headers.get('content-disposition') || '';
     let fileName = null;

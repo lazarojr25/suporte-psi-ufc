@@ -29,7 +29,14 @@ const sendTextFile = (res, fileName, content) => {
 
 router.get('/overview', async (req, res) => {
   try {
-    const data = await reportsService.getOverviewData();
+    const forceRefresh = req.query?.forceRefresh === 'true' || req.query?.forceRefresh === '1';
+    const from = req.query?.from || null;
+    const to = req.query?.to || null;
+    const data = await reportsService.getOverviewData({
+      forceRefresh,
+      from,
+      to,
+    });
     res.json({
       success: true,
       ...data,
@@ -46,7 +53,12 @@ router.get('/overview', async (req, res) => {
 
 router.get('/overview/export', async (req, res) => {
   try {
-    const { fileName, content } = await reportsService.getOverviewExportText();
+    const from = req.query?.from || null;
+    const to = req.query?.to || null;
+    const { fileName, content } = await reportsService.getOverviewExportText({
+      from,
+      to,
+    });
     sendTextFile(res, fileName, content);
   } catch (error) {
     console.error('Erro ao exportar análise geral:', error);
@@ -60,7 +72,12 @@ router.get('/overview/export', async (req, res) => {
 
 router.get('/overview/export-pdf', async (req, res) => {
   try {
-    const { fileName, content } = await reportsService.getOverviewExportPdf();
+    const from = req.query?.from || null;
+    const to = req.query?.to || null;
+    const { fileName, content } = await reportsService.getOverviewExportPdf({
+      from,
+      to,
+    });
     sendPdfBuffer(res, fileName, content);
   } catch (error) {
     console.error('Erro ao exportar análise geral em PDF:', error);
