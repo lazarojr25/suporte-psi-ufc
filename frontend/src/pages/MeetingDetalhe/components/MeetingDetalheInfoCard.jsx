@@ -5,25 +5,47 @@ export default function MeetingDetalheInfoCard({
   solicitacao,
   onOpenDiscente,
   onOpenSolicitacao,
+  containerClassName = '',
 }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-2 text-sm">
-      <p>
-        <strong>Discente:</strong> {meeting.studentName || '---'}
-      </p>
-      <p>
-        <strong>Email:</strong> {meeting.studentEmail || '---'}
-      </p>
-      <p>
-        <strong>Curso:</strong> {meeting.curso || '---'}
-      </p>
-      <p>
-        <strong>Duração:</strong> {meeting.duration || 0} min
-      </p>
-      <p>
-        <strong>Criada em:</strong> {formatDateLabel(meeting.createdAt)}
-      </p>
-      <div className="flex flex-wrap gap-2 mt-2">
+    <div className={`bg-white rounded-xl shadow p-4 sm:p-5 ${containerClassName}`}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-xs uppercase tracking-wide text-gray-500">Registro vinculado</p>
+        <span className="text-xs text-gray-500">
+          {formatDateLabel(meeting.createdAt)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-sm">
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500 uppercase">Discente</p>
+          <p className="text-base font-semibold text-gray-900 break-words">
+            {meeting.studentName || '---'}
+          </p>
+          <p className="text-sm text-gray-700 break-words">
+            {meeting.studentEmail || '---'}
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500 uppercase">Curso</p>
+          <p className="text-sm text-gray-800 break-words">{meeting.curso || '---'}</p>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500 uppercase">Duração</p>
+          <p className="text-sm text-gray-800">{meeting.duration || 0} min</p>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500 uppercase">Solicitação</p>
+          <p className="text-sm text-gray-800 break-words">
+            {solicitacao?.status ? `Status: ${solicitacao.status}` : 'Sem solicitação vinculada'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
         {(meeting.discenteId || solicitacao?.discenteId) && (
           <button
             type="button"

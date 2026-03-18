@@ -63,79 +63,81 @@ export default function DiscenteDetalhe() {
   }
 
   return (
-    <div className="p-4 max-w-5xl mx-auto space-y-6">
-      <DiscenteDetalheHeader
-        discente={discente}
-        solicitacoes={solicitacoes}
-        relatorioDiscente={relatorioDiscente}
-        orderedTranscricoes={orderedTranscricoes}
-        lastTranscription={lastTranscription}
-        hasTranscricoes={hasTranscricoes}
-        onAgendarNovaSessao={handleAgendarNovaSessao}
-        creatingSession={creatingSession}
-        isBlockedByLimit={isBlockedByLimit}
-        onReprocessDiscente={handleReprocessDiscente}
-        reprocessing={reprocessing}
-        reprocessMsg={reprocessMsg}
-        reprocessErr={reprocessErr}
-      />
+    <div className="h-full w-full min-h-0 flex flex-col overflow-hidden">
+      <div className="max-w-5xl mx-auto w-full p-4 space-y-6 flex-1 min-h-0 overflow-y-auto pr-1">
+        <DiscenteDetalheHeader
+          discente={discente}
+          solicitacoes={solicitacoes}
+          relatorioDiscente={relatorioDiscente}
+          orderedTranscricoes={orderedTranscricoes}
+          lastTranscription={lastTranscription}
+          hasTranscricoes={hasTranscricoes}
+          onAgendarNovaSessao={handleAgendarNovaSessao}
+          creatingSession={creatingSession}
+          isBlockedByLimit={isBlockedByLimit}
+          onReprocessDiscente={handleReprocessDiscente}
+          reprocessing={reprocessing}
+          reprocessMsg={reprocessMsg}
+          reprocessErr={reprocessErr}
+        />
 
-      <DiscenteDetalhePainelSessoes
-        isBlockedByLimit={isBlockedByLimit}
-        usedSessions={usedSessions}
-        configuredLimit={configuredLimit}
-        remainingSessions={remainingSessions}
-        periodStart={periodStart}
-        periodEnd={periodEnd}
-        upcomingMeeting={upcomingMeeting}
-        lastCompletedMeeting={lastCompletedMeeting}
-        lastTranscription={lastTranscription}
-        formatMeetingLabel={getMeetingDateLabel}
-      />
+        <DiscenteDetalhePainelSessoes
+          isBlockedByLimit={isBlockedByLimit}
+          usedSessions={usedSessions}
+          configuredLimit={configuredLimit}
+          remainingSessions={remainingSessions}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          upcomingMeeting={upcomingMeeting}
+          lastCompletedMeeting={lastCompletedMeeting}
+          lastTranscription={lastTranscription}
+          formatMeetingLabel={getMeetingDateLabel}
+        />
 
-      <DiscenteDetalheRelatorios
-        relatorioDiscente={relatorioDiscente}
-        orderedTranscricoes={orderedTranscricoes}
-        hasTranscricoes={hasTranscricoes}
-        selectedTranscription={selectedTranscription}
-        setSelectedTranscription={setSelectedTranscription}
-        sentimentTimeline={sentimentTimeline}
-        historyPatterns={historyPatterns}
-        monthlySentimentTimeline={monthlySentimentTimeline}
-        downloadingDiscenteReport={downloadingDiscenteReport}
-        downloadingDiscenteReportPdf={downloadingDiscenteReportPdf}
-        onDownloadTxt={handleDownloadDiscenteReport}
-        onDownloadPdf={handleDownloadDiscenteReportPdf}
-      />
+        <DiscenteDetalheRelatorios
+          relatorioDiscente={relatorioDiscente}
+          orderedTranscricoes={orderedTranscricoes}
+          hasTranscricoes={hasTranscricoes}
+          selectedTranscription={selectedTranscription}
+          setSelectedTranscription={setSelectedTranscription}
+          sentimentTimeline={sentimentTimeline}
+          historyPatterns={historyPatterns}
+          monthlySentimentTimeline={monthlySentimentTimeline}
+          downloadingDiscenteReport={downloadingDiscenteReport}
+          downloadingDiscenteReportPdf={downloadingDiscenteReportPdf}
+          onDownloadTxt={handleDownloadDiscenteReport}
+          onDownloadPdf={handleDownloadDiscenteReportPdf}
+        />
 
-      <DiscenteDetalheRelatoriosPsicologicos
-        clinicalReports={clinicalReports}
-        loadingMeetings={loadingMeetings}
-        formatMeetingLabel={getMeetingDateLabel}
-        onOpenMeeting={(meetingId) => navigate(`/meetings/${meetingId}`)}
-      />
+        <DiscenteDetalheRelatoriosPsicologicos
+          clinicalReports={clinicalReports}
+          loadingMeetings={loadingMeetings}
+          formatMeetingLabel={getMeetingDateLabel}
+          onOpenMeeting={(meetingId) => navigate(`/meetings/${meetingId}`)}
+        />
 
-      <DiscenteDetalheSessaoLista
-        meetingsDiscente={meetingsDiscente}
-        loadingMeetings={loadingMeetings}
-        formatMeetingLabel={getMeetingDateLabel}
-        onOpenMeeting={(meetingId) => navigate(`/meetings/${meetingId}`)}
-        onConcludeMeeting={async (meetingId) => {
-          try {
-            await handleMarkMeetingAsConcluded(meetingId);
-          } catch {
-            alert('Não foi possível concluir a sessão.');
-          }
-        }}
-      />
+        <DiscenteDetalheSessaoLista
+          meetingsDiscente={meetingsDiscente}
+          loadingMeetings={loadingMeetings}
+          formatMeetingLabel={getMeetingDateLabel}
+          onOpenMeeting={(meetingId) => navigate(`/meetings/${meetingId}`)}
+          onConcludeMeeting={async (meetingId) => {
+            try {
+              await handleMarkMeetingAsConcluded(meetingId);
+            } catch {
+              alert('Não foi possível concluir a sessão.');
+            }
+          }}
+        />
 
-      <DiscenteDetalheTimeline
-        timelineFilter={timelineFilter}
-        setTimelineFilter={setTimelineFilter}
-        filteredTimelineItems={filteredTimelineItems}
-        timelineTypeStyles={timelineTypeStyles}
-        timelineTypeLabels={timelineTypeLabels}
-      />
+        <DiscenteDetalheTimeline
+          timelineFilter={timelineFilter}
+          setTimelineFilter={setTimelineFilter}
+          filteredTimelineItems={filteredTimelineItems}
+          timelineTypeStyles={timelineTypeStyles}
+          timelineTypeLabels={timelineTypeLabels}
+        />
+      </div>
     </div>
   );
 }

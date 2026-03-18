@@ -9,7 +9,7 @@ export default function SessoesFilters({
   onQueryChange,
 }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
       <label className="text-sm space-y-1">
         <span className="text-[11px] text-gray-600 uppercase">Status</span>
         <select
