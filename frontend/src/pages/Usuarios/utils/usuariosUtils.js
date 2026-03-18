@@ -4,7 +4,7 @@ export const ROLE_OPTIONS = [
 ];
 
 export const normalizeRole = (role) => {
-  const normalized = (role || '').toLowerCase();
+  const normalized = (role || '').toString().trim().toLowerCase();
   if (normalized === 'staff') return 'servidor';
   if (normalized === 'admin' || normalized === 'servidor') return normalized;
   return 'servidor';

@@ -1,12 +1,3 @@
-export const BASE_CURSOS = [
-  'Ciência da Computação',
-  'Engenharia de Computação',
-  'Engenharia de Software',
-  'Sistemas da Informação',
-  'Redes de Computadores',
-  'Design Digital',
-];
-
 export const formatDateTime = (createdAt) => {
   if (!createdAt) return '---';
 
@@ -64,12 +55,26 @@ export const getStatusBadgeMeta = (statusRaw) => {
   return { label, className };
 };
 
-export const buildCursoOptions = (solicitacoes) => {
-  const set = new Set(BASE_CURSOS);
+export const buildCursoOptions = (solicitacoes = [], cursosCatalog = []) => {
+  const set = new Set();
+
+  cursosCatalog.forEach((curso) => {
+    if (curso.nome) set.add(curso.nome);
+    else if (curso.label) set.add(curso.label);
+    else if (curso.sigla) set.add(curso.sigla);
+  });
+
   solicitacoes.forEach((s) => {
     if (s.curso) {
       set.add(s.curso);
     }
+    if (s.cursoNome) {
+      set.add(s.cursoNome);
+    }
+    if (s.cursoSigla) {
+      set.add(s.cursoSigla);
+    }
   });
+
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt', { sensitivity: 'base' }));
 };

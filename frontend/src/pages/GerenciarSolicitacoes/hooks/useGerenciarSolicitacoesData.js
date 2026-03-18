@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../../../services/firebase';
+import useCursosCatalog from '../../../hooks/useCursosCatalog';
 import apiService from '../../../services/api';
 import {
   buildCursoOptions,
@@ -25,6 +26,7 @@ export default function useGerenciarSolicitacoesData() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [curso, setCurso] = useState('');
+  const { cursoOptions: cursoCatalogOptions } = useCursosCatalog();
 
   useEffect(() => {
     const fetchSolicitacoes = async () => {
@@ -87,15 +89,22 @@ export default function useGerenciarSolicitacoesData() {
         ? (s.studentId || '').toLowerCase().includes(termMat)
         : true;
       const cursoMatch = curso
-        ? (s.curso || '').toLowerCase() === curso.toLowerCase()
+        ? [
+            s.cursoId,
+            s.cursoNome,
+            s.cursoSigla,
+            s.curso,
+          ]
+            .filter(Boolean)
+            .some((value) => value.toLowerCase() === curso.toLowerCase())
         : true;
       return nameMatch && matMatch && cursoMatch;
     });
   }, [solicitacoes, searchName, searchMatricula, startDate, endDate, curso]);
 
   const cursoOptions = useMemo(
-    () => buildCursoOptions(solicitacoes),
-    [solicitacoes]
+    () => buildCursoOptions(solicitacoes, cursoCatalogOptions),
+    [solicitacoes, cursoCatalogOptions]
   );
 
   const pendentes = useMemo(

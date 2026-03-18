@@ -24,8 +24,10 @@ export default function Solicitacao() {
     setStudentId,
     motivation,
     setMotivation,
-    curso,
-    setCurso,
+    cursoId,
+    setCursoId,
+    cursoOptions,
+    cursosLoading,
     loading,
     error,
     showSuccessModal,
@@ -43,17 +45,18 @@ export default function Solicitacao() {
           <SolicitacaoIntro />
           <SolicitacaoForm
             error={error}
-            loading={loading}
             name={name}
             setName={setName}
             email={email}
             setEmail={setEmail}
             studentId={studentId}
             setStudentId={setStudentId}
-            curso={curso}
-            setCurso={setCurso}
+            cursoId={cursoId}
+            setCursoId={setCursoId}
+            cursos={cursoOptions}
             motivation={motivation}
             setMotivation={setMotivation}
+            loading={loading || cursosLoading}
             onSubmit={handleSubmit}
           />
         </div>

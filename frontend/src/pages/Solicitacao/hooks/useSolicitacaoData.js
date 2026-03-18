@@ -1,47 +1,51 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  collection,
-  addDoc,
-  serverTimestamp,
-  getDocs,
-  query,
-  where,
-} from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import { db } from '../../../services/firebase';
+import useCursosCatalog, { getCursoDisplayName } from '../../../hooks/useCursosCatalog';
 import { isInstitutionalEmail, STATUS } from '../utils/solicitacaoUtils';
 
 export default function useSolicitacaoData() {
   const navigate = useNavigate();
+  const { cursoOptions, loading: cursosLoading } = useCursosCatalog();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [studentId, setStudentId] = useState('');
   const [motivation, setMotivation] = useState('');
-  const [curso, setCurso] = useState('');
+  const [cursoId, setCursoId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const getOrCreateDiscente = async () => {
-    const q = query(
-      collection(db, 'discentes'),
-      where('studentId', '==', studentId)
-    );
+  const cursoSelecionado = useMemo(
+    () => cursoOptions.find((curso) => curso.id === cursoId) || null,
+    [cursoOptions, cursoId],
+  );
 
-    const snapshot = await getDocs(q);
+  const cursoPayload = useMemo(() => {
+    if (!cursoSelecionado) return {};
 
-    if (!snapshot.empty) {
-      const docSnap = snapshot.docs[0];
-      return docSnap.id;
-    }
+    return {
+      cursoId: cursoSelecionado.id,
+      curso: cursoSelecionado.nome || getCursoDisplayName(cursoSelecionado),
+      cursoNome: cursoSelecionado.nome || null,
+      cursoSigla: cursoSelecionado.sigla || null,
+    };
+  }, [cursoSelecionado]);
+
+  const createDiscente = async () => {
+    const basePayload = {
+      ...cursoPayload,
+      updatedAt: serverTimestamp(),
+    };
 
     const discenteRef = await addDoc(collection(db, 'discentes'), {
       name,
       email,
       studentId,
-      curso,
+      ...basePayload,
       createdAt: serverTimestamp(),
     });
 
@@ -49,7 +53,7 @@ export default function useSolicitacaoData() {
   };
 
   const validate = () => {
-    if (!name || !email || !studentId || !motivation || !curso) {
+    if (!name || !email || !studentId || !motivation || !cursoId) {
       return 'Por favor, preencha todos os campos.';
     }
     if (!isInstitutionalEmail(email)) {
@@ -70,7 +74,7 @@ export default function useSolicitacaoData() {
 
     setLoading(true);
     try {
-      const discenteId = await getOrCreateDiscente();
+      const discenteId = await createDiscente();
 
       await addDoc(collection(db, 'solicitacoesAtendimento'), {
         discenteId,
@@ -80,7 +84,7 @@ export default function useSolicitacaoData() {
         name,
         email,
         studentId,
-        curso,
+        ...cursoPayload,
       });
 
       setShowSuccessModal(true);
@@ -88,7 +92,7 @@ export default function useSolicitacaoData() {
       setEmail('');
       setStudentId('');
       setMotivation('');
-      setCurso('');
+      setCursoId('');
     } catch (err) {
       console.error(err);
       setError('Erro ao enviar solicitação. Tente novamente.');
@@ -106,8 +110,10 @@ export default function useSolicitacaoData() {
     setStudentId,
     motivation,
     setMotivation,
-    curso,
-    setCurso,
+    cursoId,
+    setCursoId,
+    cursoOptions,
+    cursosLoading,
     loading,
     error,
     showSuccessModal,
