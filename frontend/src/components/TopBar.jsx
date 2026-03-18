@@ -117,18 +117,18 @@ export default function TopBar({ user, role }) {
                         >
                           Usuários
                         </NavLink>
+                        <NavLink
+                          to="/configuracoes"
+                          className={({ isActive }) =>
+                            `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
+                          }
+                          onClick={() => setAdminMenuOpen(false)}
+                        >
+                          Configurações
+                        </NavLink>
                         <div className="h-px bg-gray-100 my-1" />
                       </>
                     )}
-                    <NavLink
-                      to="/configuracoes"
-                      className={({ isActive }) =>
-                        `block px-3 py-2 text-sm ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`
-                      }
-                      onClick={() => setAdminMenuOpen(false)}
-                    >
-                      Configurações
-                    </NavLink>
                   </div>
                 )}
               </div>
@@ -200,14 +200,16 @@ export default function TopBar({ user, role }) {
                 Usuários
               </NavLink>
             )}
-            <NavLink
-              to="/configuracoes"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkInactive}`
-              }
-            >
-              Configurações
-            </NavLink>
+            {role === 'admin' && (
+              <NavLink
+                to="/configuracoes"
+                className={({ isActive }) =>
+                  `${linkBase} ${isActive ? linkActive : linkInactive}`
+                }
+              >
+                Configurações
+              </NavLink>
+            )}
           </div>
         </nav>
       </div>

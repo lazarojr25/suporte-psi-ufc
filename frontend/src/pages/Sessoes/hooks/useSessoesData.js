@@ -56,6 +56,26 @@ export default function useSessoesData() {
       });
   }, [meetings, query, statusFilter]);
 
+  const summary = useMemo(() => {
+    const totals = {
+      total: filteredMeetings.length,
+      agendada: 0,
+      emProcessamento: 0,
+      concluida: 0,
+      cancelada: 0,
+    };
+
+    filteredMeetings.forEach((meeting) => {
+      const status = normalizeStatus(meeting.status);
+      if (status === 'agendada') totals.agendada += 1;
+      else if (status === 'em_processamento') totals.emProcessamento += 1;
+      else if (status === 'concluida') totals.concluida += 1;
+      else if (status === 'cancelada') totals.cancelada += 1;
+    });
+
+    return totals;
+  }, [filteredMeetings]);
+
   return {
     meetings,
     loading,
@@ -64,6 +84,7 @@ export default function useSessoesData() {
     dateFilter,
     query,
     filteredMeetings,
+    summary,
     setStatusFilter,
     setDateFilter,
     setQuery,

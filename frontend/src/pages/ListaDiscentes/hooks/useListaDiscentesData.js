@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../../services/firebase';
+import useCursosCatalog from '../../../hooks/useCursosCatalog';
 
 export default function useListaDiscentesData() {
   const [discentes, setDiscentes] = useState([]);
@@ -9,6 +10,7 @@ export default function useListaDiscentesData() {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [cursoFilter, setCursoFilter] = useState('');
+  const { cursoOptions } = useCursosCatalog();
 
   const navigate = useNavigate();
 
@@ -37,10 +39,15 @@ export default function useListaDiscentesData() {
 
   const discentesFiltrados = useMemo(() => {
     const term = search.trim().toLowerCase();
+    const filtroCurso = cursoFilter.trim().toLowerCase();
 
     return discentes.filter((d) => {
       const matchCurso = cursoFilter
-        ? (d.curso || '').toLowerCase() === cursoFilter.toLowerCase()
+        ? [d.cursoId, d.cursoNome, d.cursoSigla, d.curso]
+            .filter(Boolean)
+            .some((value) =>
+              value.toLowerCase().trim() === filtroCurso
+            )
         : true;
 
       const matchBusca = term
@@ -63,6 +70,7 @@ export default function useListaDiscentesData() {
     setSearch,
     cursoFilter,
     setCursoFilter,
+    cursoOptions,
     openDetails: (discenteId) => navigate(`/discentes/${discenteId}`),
   };
 }

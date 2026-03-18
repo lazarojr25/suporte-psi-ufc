@@ -11,7 +11,7 @@ export default function PrivateLayout() {
   const [role, setRole] = useState(null);
   const location = useLocation();
   const normalizeRole = (value) => {
-    const r = (value || '').toLowerCase();
+    const r = (value || '').toString().trim().toLowerCase();
     if (r === 'admin') return 'admin';
     if (r === 'staff' || r === 'servidor') return 'servidor';
     return 'servidor';
@@ -76,7 +76,7 @@ export default function PrivateLayout() {
     return <Navigate to="/" replace />;
   }
 
-  const adminOnlyRoutes = ['/relatorios', '/usuarios'];
+  const adminOnlyRoutes = ['/relatorios', '/usuarios', '/cadastro', '/configuracoes'];
   const isAdmin = role === 'admin';
   if (role && !isAdmin && adminOnlyRoutes.includes(location.pathname)) {
     return <Navigate to="/agenda" replace />;

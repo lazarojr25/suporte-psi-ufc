@@ -269,7 +269,10 @@ export default function useDiscenteDetalheData(discenteId, options = {}) {
         name: discente.name || '',
         email: discente.email || '',
         studentId: discente.studentId || '',
+        cursoId: discente.cursoId || null,
         curso: discente.curso || '',
+        cursoNome: discente.cursoNome || null,
+        cursoSigla: discente.cursoSigla || null,
       };
       const docRef = await addDoc(collection(db, 'solicitacoesAtendimento'), payload);
       navigate(`/agendar-atendimento/${docRef.id}`);

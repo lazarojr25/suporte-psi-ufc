@@ -13,6 +13,7 @@ export default function ListaDiscentes() {
     setSearch,
     cursoFilter,
     setCursoFilter,
+    cursoOptions,
     openDetails,
   } = useListaDiscentesData();
 
@@ -26,6 +27,7 @@ export default function ListaDiscentes() {
             cursoFilter={cursoFilter}
             onSearchChange={setSearch}
             onCursoChange={setCursoFilter}
+            cursoOptions={cursoOptions}
           />
         </div>
       </div>
