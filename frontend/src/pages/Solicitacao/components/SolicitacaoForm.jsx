@@ -1,5 +1,4 @@
 import React from 'react';
-import { CURSOS } from '../utils/solicitacaoUtils';
 
 export default function SolicitacaoForm({
   error,
@@ -10,11 +9,12 @@ export default function SolicitacaoForm({
   setEmail,
   studentId,
   setStudentId,
-  curso,
-  setCurso,
+  cursoId,
+  setCursoId,
   motivation,
   setMotivation,
   onSubmit,
+  cursos,
 }) {
   return (
     <section>
@@ -64,18 +64,23 @@ export default function SolicitacaoForm({
         <label className="block mb-3">
           <span className="text-sm font-medium text-gray-700">Curso</span>
           <select
-            value={curso}
-            onChange={(e) => setCurso(e.target.value)}
+            value={cursoId}
+            onChange={(e) => setCursoId(e.target.value)}
             className="mt-1 block w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring"
             required
           >
             <option value="">Selecione o curso</option>
-            {CURSOS.map((cursoOption) => (
-              <option key={cursoOption} value={cursoOption}>
-                {cursoOption}
+            {cursos.map((curso) => (
+              <option key={curso.id} value={curso.id}>
+                {curso.label}
               </option>
             ))}
           </select>
+          {!cursos.length && (
+            <p className="text-xs text-gray-500 mt-1">
+              Nenhum curso disponível no momento.
+            </p>
+          )}
         </label>
 
         <label className="block mb-4">

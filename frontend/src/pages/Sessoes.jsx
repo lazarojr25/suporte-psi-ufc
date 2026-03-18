@@ -12,17 +12,17 @@ export default function Sessoes() {
     filteredMeetings,
     loading,
     error,
+    summary,
     setStatusFilter,
     setDateFilter,
     setQuery,
-    loadMeetings,
     openMeeting,
   } = useSessoesData();
 
   return (
     <div className="h-full w-full flex flex-col min-h-0 gap-4 overflow-hidden">
       <div className="bg-white rounded-xl shadow p-4">
-        <SessoesHeader onRefresh={loadMeetings} />
+        <SessoesHeader summary={summary} />
       </div>
 
       <SessoesFilters

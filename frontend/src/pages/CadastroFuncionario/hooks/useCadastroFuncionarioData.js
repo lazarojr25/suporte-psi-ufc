@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../../../services/firebase';
+import apiService from '../../../services/api';
 import { FUNCIONARIO_DEFAULT_ROLE } from '../utils/cadastroFuncionarioUtils';
 
 export default function useCadastroFuncionarioData() {
@@ -21,17 +19,18 @@ export default function useCadastroFuncionarioData() {
     }
 
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, senha);
-      try {
-        await setDoc(doc(db, 'users', cred.user.uid), {
-          email: cred.user.email || '',
-          role: FUNCIONARIO_DEFAULT_ROLE,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.warn('Não foi possível criar doc do usuário:', e);
+      const res = await apiService.createUserAdmin({
+        email: email.trim(),
+        password: senha,
+        role: FUNCIONARIO_DEFAULT_ROLE,
+      });
+
+      if (res?.success) {
+        navigate('/usuarios');
+        return;
       }
-      navigate('/gerenciar-solicitacoes');
+
+      setErro(res?.message || 'Não foi possível criar o usuário.');
     } catch (err) {
       setErro(`Erro ao criar o usuário: ${err.message}`);
     }
