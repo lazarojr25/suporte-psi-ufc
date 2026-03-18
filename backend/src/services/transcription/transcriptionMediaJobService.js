@@ -100,10 +100,21 @@ class TranscriptionMediaJobService {
         return lastResult;
       }
 
-      if (!lastResult.retryable || attempt >= maxAttempts) {
-        if (this._isRetryableError({ message: lastResult.message }) === false) {
-          return lastResult;
-        }
+      const retryableError = this._isRetryableError({
+        message: lastResult.message,
+        code: lastResult.code,
+      });
+      const mustStop = !retryableError || attempt >= maxAttempts;
+
+      if (mustStop) {
+        this._safeUpdateMeeting(payload.updateMeetingSafe, payload.extraInfo?.meetingId, {
+          status: 'erro_transcricao',
+          updatedAt: new Date().toISOString(),
+          transcricaoErro: lastResult.message || 'Erro no processamento de transcrição.',
+          tentativaTranscricao: attempt,
+          maxTentativas: maxAttempts,
+          retryable: retryableError,
+        });
         return lastResult;
       }
 
@@ -256,6 +267,7 @@ class TranscriptionMediaJobService {
     let segDir = null;
     const originalPath = filePath;
     const baseName = path.basename(fileName, path.extname(fileName));
+    let shouldCleanupSource = false;
 
     try {
       workDir = path.join(this.workDirectory, 'work', baseName);
@@ -380,13 +392,8 @@ class TranscriptionMediaJobService {
       };
     } catch (error) {
       console.error(`[transcription-job ${jobId}] Erro no processamento:`, error);
-      const shouldMarkFailed = attempt >= maxAttempts;
-      if (shouldMarkFailed) {
-        this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
-          status: 'erro_transcricao',
-          updatedAt: new Date().toISOString(),
-        });
-      }
+      const retryableError = this._isRetryableError(error);
+      shouldCleanupSource = (cleanupSource && (!retryableError || attempt >= maxAttempts));
       return {
         success: false,
         message: error?.message || 'Erro no processamento de mídia',
@@ -395,7 +402,7 @@ class TranscriptionMediaJobService {
     } finally {
       if (workDir) removeDir(workDir);
       if (segDir) removeDir(segDir);
-      if (originalPath && cleanupSource && attempt >= maxAttempts) {
+      if (originalPath && shouldCleanupSource) {
         removeIfExists(originalPath);
       }
     }

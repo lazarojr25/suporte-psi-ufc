@@ -3,10 +3,11 @@ export const STATUS_LABELS = {
   em_processamento: 'Processando',
   concluida: 'Concluída',
   cancelada: 'Cancelada',
+  erro_transcricao: 'Erro de transcrição',
 };
 
 export const normalizeStatus = (status) =>
-  status === 'processando' ? 'em_processamento' : status;
+  status === 'processando' ? 'em_processamento' : String(status || '').toLowerCase().trim();
 
 export const getBadgeClass = (status) => {
   const normalized = normalizeStatus(status);
@@ -21,6 +22,8 @@ export const getBadgeClass = (status) => {
       return `${base} bg-blue-100 text-blue-800`;
     case 'cancelada':
       return `${base} bg-red-100 text-red-800`;
+    case 'erro_transcricao':
+      return `${base} bg-rose-100 text-rose-800`;
     default:
       return `${base} bg-gray-100 text-gray-700`;
   }

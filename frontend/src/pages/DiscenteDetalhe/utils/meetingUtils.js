@@ -16,6 +16,9 @@ export const buildMeetingStatus = (meeting = {}) => {
   } else if (statusNormalized === 'concluida') {
     label = 'Concluída';
     className = 'bg-green-100 text-green-800 border border-green-200';
+  } else if (statusNormalized === 'erro_transcricao') {
+    label = 'Erro de transcrição';
+    className = 'bg-rose-100 text-rose-800 border border-rose-200';
   } else if (statusNormalized.includes('process')) {
     label = 'Processando';
     className = 'bg-amber-100 text-amber-800 border border-amber-200';
@@ -59,19 +62,14 @@ export const getMeetingDateLabel = (meeting) => {
 export const matchesDiscenteForMeeting = (meeting = {}, discente = null) => {
   if (!meeting || !discente) return false;
 
-  const matchById = meeting.discenteId && discente.id && meeting.discenteId === discente.id;
-  const matchByEmail =
-    !meeting.discenteId &&
-    discente.email &&
-    meeting.studentEmail &&
-    meeting.studentEmail.toLowerCase() === discente.email.toLowerCase();
-  const matchByName =
-    !meeting.discenteId &&
-    discente.name &&
-    meeting.studentName &&
-    meeting.studentName.toLowerCase() === discente.name.toLowerCase();
+  const meetingDiscenteId =
+    typeof meeting.discenteId === 'string'
+      ? meeting.discenteId.trim()
+      : '';
+  const discenteId =
+    typeof discente.id === 'string' ? discente.id.trim() : '';
 
-  return matchById || matchByEmail || matchByName;
+  return !!meetingDiscenteId && !!discenteId && meetingDiscenteId === discenteId;
 };
 
 export const parsePeriodBoundary = (value, isEnd = false) => {
