@@ -14,13 +14,12 @@ export default function SolicitacaoSuccessModal({ open, onClose }) {
             Recebemos seus dados
           </h3>
           <p className="text-sm text-gray-700">
-            Vamos revisar sua solicitação e retornar pelo seu e-mail institucional.
+            Vamos revisar sua solicitação e retornar detalhes de agendamento pelo e-mail informado.
             Fique atento à caixa de entrada e ao spam.
           </p>
         </div>
         <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800">
-          Use apenas seu e-mail institucional para garantir o recebimento das
-          orientações.
+          Use o e-mail informado para garantir o retorno das orientações.
         </div>
         <div className="flex justify-end">
           <button

@@ -22,7 +22,7 @@ export default function ListaDiscentesFilters({
       >
         <option value="">Todos os cursos</option>
         {cursoOptions.map((curso) => (
-          <option key={curso.id} value={curso.nome || curso.label}>
+          <option key={curso.id} value={curso.id || ''}>
             {curso.label}
           </option>
         ))}

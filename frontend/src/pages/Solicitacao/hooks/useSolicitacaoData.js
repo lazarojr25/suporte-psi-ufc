@@ -4,7 +4,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 import { db } from '../../../services/firebase';
 import useCursosCatalog, { getCursoDisplayName } from '../../../hooks/useCursosCatalog';
-import { isInstitutionalEmail, STATUS } from '../utils/solicitacaoUtils';
+import { STATUS } from '../utils/solicitacaoUtils';
 
 export default function useSolicitacaoData() {
   const navigate = useNavigate();
@@ -55,9 +55,6 @@ export default function useSolicitacaoData() {
   const validate = () => {
     if (!name || !email || !studentId || !motivation || !cursoId) {
       return 'Por favor, preencha todos os campos.';
-    }
-    if (!isInstitutionalEmail(email)) {
-      return 'Use seu e-mail institucional (@ufc.br ou @quixada.ufc.br).';
     }
     return null;
   };

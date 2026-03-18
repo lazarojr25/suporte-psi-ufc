@@ -39,7 +39,7 @@ export default function SolicitacaoForm({
 
         <label className="block mb-3">
           <span className="block text-sm font-medium text-gray-700">
-            E-mail institucional
+            E-mail
           </span>
           <input
             type="email"

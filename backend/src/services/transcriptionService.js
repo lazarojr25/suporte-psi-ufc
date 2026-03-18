@@ -11,6 +11,7 @@ import TranscriptionStorage from './transcription/storage/transcriptionStorage.j
 import TranscriptionAiClient from './transcription/clients/transcriptionAiClient.js';
 import TranscriptionMetadataRepository from './transcription/repositories/transcriptionMetadataRepository.js';
 import { TRANSCRIPTION_ANALYSIS_PROMPT_VERSION } from './transcription/utils/transcriptionPrompt.js';
+import { logTranscriptionProcessingError } from './firestoreService.js';
 
 dotenv.config();
 
@@ -91,26 +92,44 @@ class TranscriptionService {
     let transcriptionText = '';
     let analysis = null;
     let analysisStatus = ANALYSIS_STATUS.OK;
+    let transcriptionStatus = ANALYSIS_STATUS.OK;
     let analysisError = null;
 
     try {
       transcriptionText = await this.aiClient.transcribeAudio(audioPath);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para transcrição:', error);
-      transcriptionText = `[ERRO NA TRANSCRIÇÃO: ${error.message}] Simulação de transcrição para ${path.basename(
-        audioPath,
-      )}.`;
+      analysisStatus = ANALYSIS_STATUS.FAILED;
+      transcriptionStatus = ANALYSIS_STATUS.FAILED;
+      analysisError = error?.message || 'Falha ao transcrever áudio.';
+      transcriptionText = '';
     }
 
     if (outputFileName === null) {
       return {
-        success: true,
+        success: transcriptionStatus !== ANALYSIS_STATUS.FAILED,
         transcription: transcriptionText,
         analysis: null,
-        analysisStatus: ANALYSIS_STATUS.SKIPPED,
-        analysisError: null,
+        analysisStatus:
+          transcriptionStatus === ANALYSIS_STATUS.FAILED
+            ? ANALYSIS_STATUS.FAILED
+            : ANALYSIS_STATUS.SKIPPED,
+        analysisError,
         metadata: null,
         fileName: null,
+      };
+    }
+
+    if (analysisStatus === ANALYSIS_STATUS.FAILED) {
+      return {
+        success: false,
+        error: analysisError,
+        transcription: transcriptionText,
+        analysis: null,
+        analysisStatus,
+        analysisError,
+        metadata: null,
+        fileName: outputFileName,
       };
     }
 
@@ -121,7 +140,10 @@ class TranscriptionService {
       analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
-    const normalizedAnalysis = this._normalizeAnalysis(analysis, analysisError);
+    const normalizedAnalysis =
+      analysisStatus === ANALYSIS_STATUS.OK
+        ? this._normalizeAnalysis(analysis)
+        : null;
 
     const formatted = formatTranscriptionDocument(
       transcriptionText,
@@ -167,7 +189,8 @@ class TranscriptionService {
       analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
     }
-    const normalizedAnalysis = this._normalizeAnalysis(analysis, analysisError);
+    const normalizedAnalysis =
+      analysisStatus === ANALYSIS_STATUS.OK ? this._normalizeAnalysis(analysis) : null;
 
     const formatted = formatTranscriptionDocument(
       mergedText,
@@ -257,6 +280,23 @@ class TranscriptionService {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
       analysisStatus = ANALYSIS_STATUS.FAILED;
       analysisError = error?.message || 'Falha ao analisar transcrição.';
+
+      await logTranscriptionProcessingError({
+        source: 'transcription-service',
+        stage: 'reprocess',
+        error,
+        status: 'failed',
+        errorType: 'analysis',
+        retryable: false,
+        meetingId: extraInfo?.meetingId || null,
+        discenteId: extraInfo?.discenteId || null,
+        solicitacaoId: extraInfo?.solicitacaoId || null,
+        transcriptFileName: fileName,
+        metadata: {
+          fileName,
+          stage: 'reprocess',
+        },
+      });
     }
 
     if (analysisStatus === ANALYSIS_STATUS.FAILED) {

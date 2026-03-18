@@ -49,8 +49,8 @@ export default function GerenciarSolicitacoesFilters({
           >
             <option value="">Todos</option>
             {cursoOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
+              <option key={c.id} value={c.id}>
+                {c.label}
               </option>
             ))}
           </select>

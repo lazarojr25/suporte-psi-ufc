@@ -13,7 +13,7 @@ export default function SolicitacaoIntro() {
       <ul className="text-sm text-gray-700 space-y-1 mb-6 list-disc list-inside">
         <li>Preencha o formulário ao lado com seus dados institucionais;</li>
         <li>Sua solicitação será avaliada pela equipe de psicologia;</li>
-        <li>Você será contatado pelo e-mail institucional para orientações.</li>
+        <li>Você será contatado pelo e-mail informado para orientações.</li>
       </ul>
       <p className="text-xs text-gray-500">
         As informações fornecidas são confidenciais e utilizadas apenas

@@ -55,26 +55,30 @@ export const getStatusBadgeMeta = (statusRaw) => {
   return { label, className };
 };
 
-export const buildCursoOptions = (solicitacoes = [], cursosCatalog = []) => {
-  const set = new Set();
+const normalize = (value) =>
+  (value || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 
-  cursosCatalog.forEach((curso) => {
-    if (curso.nome) set.add(curso.nome);
-    else if (curso.label) set.add(curso.label);
-    else if (curso.sigla) set.add(curso.sigla);
-  });
-
-  solicitacoes.forEach((s) => {
-    if (s.curso) {
-      set.add(s.curso);
-    }
-    if (s.cursoNome) {
-      set.add(s.cursoNome);
-    }
-    if (s.cursoSigla) {
-      set.add(s.cursoSigla);
-    }
-  });
-
-  return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt', { sensitivity: 'base' }));
+export const buildCursoOptions = (cursosCatalog = []) => {
+  return cursosCatalog
+    .filter((curso) => curso && (curso.nome || curso.sigla))
+    .map((curso) => {
+      const nome = (curso.nome || '').toString().trim();
+      const sigla = (curso.sigla || '').toString().trim();
+      const label = curso.label || (nome && sigla ? `${nome} (${sigla})` : nome || sigla);
+      return {
+        id: curso.id,
+        nome,
+        sigla,
+        label,
+      };
+    })
+    .filter((curso) => curso.label)
+    .sort((a, b) => normalize(a.label).localeCompare(normalize(b.label), 'pt', {
+      sensitivity: 'base',
+    }));
 };
