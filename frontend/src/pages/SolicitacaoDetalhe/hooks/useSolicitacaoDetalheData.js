@@ -51,6 +51,10 @@ export default function useSolicitacaoDetalheData() {
   );
 
   const title = solicitacao?.name || solicitacao?.studentName || 'Solicitação';
+  const canSchedule = useMemo(() => {
+    const status = (solicitacao?.status || '').toString().toLowerCase();
+    return !status.includes('agend');
+  }, [solicitacao?.status]);
 
   return {
     solicitacao,
@@ -59,6 +63,7 @@ export default function useSolicitacaoDetalheData() {
     error,
     statusBadge,
     title,
+    canSchedule,
     navigateToAgenda: () => navigate('/agenda'),
     navigateToAgendar: () => navigate(`/agendar-atendimento/${solicitacaoId}`),
     navigateToDiscente: () => navigate(`/discentes/${solicitacao.discenteId}`),

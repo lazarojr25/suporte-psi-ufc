@@ -150,6 +150,7 @@ export default function GerenciarSolicitacoes() {
                 sectionListClassName="pb-1"
                 hideHeader
                 meetingsBySolicitacao={meetingsBySolicitacao}
+                onOpenSolicitacao={(id) => navigate(`/solicitacoes/${id}`)}
                 onOpenDiscente={(id) => id && navigate(`/discentes/${id}`)}
                 onOpenMeeting={(meetingId) => navigate(`/meetings/${meetingId}`)}
                 onOpenScheduling={(id) => `/agendar-atendimento/${id}`}
@@ -171,6 +172,7 @@ export default function GerenciarSolicitacoes() {
               onOpenDiscente={(id) => id && navigate(`/discentes/${id}`)}
               onOpenMeeting={(meetingId) => navigate(`/meetings/${meetingId}`)}
               onOpenScheduling={(id) => `/agendar-atendimento/${id}`}
+              onOpenSolicitacao={(id) => navigate(`/solicitacoes/${id}`)}
             />
           )}
         </div>

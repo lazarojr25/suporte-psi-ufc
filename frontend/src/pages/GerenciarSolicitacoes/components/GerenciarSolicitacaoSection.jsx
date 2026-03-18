@@ -15,6 +15,7 @@ export default function GerenciarSolicitacaoSection({
   onOpenDiscente,
   onOpenMeeting,
   onOpenScheduling,
+  onOpenSolicitacao,
   itemClassName,
   hideHeader = false,
 }) {
@@ -52,6 +53,7 @@ export default function GerenciarSolicitacaoSection({
                 onOpenDiscente={onOpenDiscente}
                 onOpenMeeting={onOpenMeeting}
                 onOpenScheduling={onOpenScheduling}
+                onOpenSolicitacao={onOpenSolicitacao}
               />
             ))}
           </ul>

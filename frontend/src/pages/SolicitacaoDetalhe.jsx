@@ -2,7 +2,6 @@ import React from 'react';
 import useSolicitacaoDetalheData from './SolicitacaoDetalhe/hooks/useSolicitacaoDetalheData';
 import SolicitacaoDetalheHeader from './SolicitacaoDetalhe/components/SolicitacaoDetalheHeader';
 import SolicitacaoDetalheInfo from './SolicitacaoDetalhe/components/SolicitacaoDetalheInfo';
-import SolicitacaoDetalheActions from './SolicitacaoDetalhe/components/SolicitacaoDetalheActions';
 import SolicitacaoDetalheMeeting from './SolicitacaoDetalhe/components/SolicitacaoDetalheMeeting';
 
 export default function SolicitacaoDetalhe() {
@@ -12,6 +11,7 @@ export default function SolicitacaoDetalhe() {
     loading,
     error,
     statusBadge,
+    canSchedule,
     title,
     navigateToAgenda,
     navigateToAgendar,
@@ -29,15 +29,13 @@ export default function SolicitacaoDetalhe() {
         title={title}
         statusBadge={statusBadge}
         onBack={navigateToAgenda}
+        canSchedule={canSchedule}
+        onSchedule={navigateToAgendar}
+        onOpenDiscente={navigateToDiscente}
+        disabledDiscente={!solicitacao.discenteId}
       />
 
       <SolicitacaoDetalheInfo solicitacao={solicitacao} />
-
-      <SolicitacaoDetalheActions
-        onSchedule={navigateToAgendar}
-        onOpenDiscente={navigateToDiscente}
-        discenteId={solicitacao.discenteId}
-      />
 
       <SolicitacaoDetalheMeeting meeting={meeting} onOpenMeeting={navigateToMeeting} />
     </div>

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-import { getStatusBadgeMeta } from '../utils/gerenciarSolicitacoesUtils';
+import { getStatusBadgeMeta, normalizeStatus } from '../utils/gerenciarSolicitacoesUtils';
 
 export default function GerenciarSolicitacaoItem({
   solicitacao,
@@ -8,9 +8,11 @@ export default function GerenciarSolicitacaoItem({
   onOpenDiscente,
   onOpenMeeting,
   onOpenScheduling,
+  onOpenSolicitacao,
   itemClassName,
 }) {
   const statusMeta = getStatusBadgeMeta(solicitacao.status);
+  const isAgendada = solicitacao.isAgendada === true || normalizeStatus(solicitacao.status) === 'agendada';
   const clampTwoLinesStyle = {
     display: '-webkit-box',
     WebkitLineClamp: 2,
@@ -18,8 +20,47 @@ export default function GerenciarSolicitacaoItem({
     overflow: 'hidden',
   };
   
+  const handleOpenSolicitacao = () => {
+    if (onOpenSolicitacao) {
+      onOpenSolicitacao(solicitacao.id);
+    }
+  };
+
+  const handleOpenDiscente = (event) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (onOpenDiscente) {
+      onOpenDiscente(solicitacao.discenteId);
+    }
+  };
+
+  const handleOpenMeeting = (event) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (onOpenMeeting) {
+      onOpenMeeting(meetingsBySolicitacao[solicitacao.id]);
+    }
+  };
+
+  const stopPropagateIfEvent = (event) => {
+    event?.stopPropagation();
+  };
+
   return (
-    <li className={`border rounded-lg p-2 sm:p-2.5 flex flex-col gap-1 ${itemClassName || ''}`}>
+    <li
+      className={`border rounded-lg p-2 sm:p-2.5 flex flex-col gap-1 ${itemClassName || ''} cursor-pointer transition hover:border-blue-300 hover:bg-blue-50`}
+      onClick={handleOpenSolicitacao}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleOpenSolicitacao();
+        }
+      }}
+    >
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1.5 min-w-0">
         <div>
           <p className="font-semibold text-sm sm:text-base text-gray-900 leading-tight break-words">
@@ -52,7 +93,7 @@ export default function GerenciarSolicitacaoItem({
 
       <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:justify-end">
         <button
-          onClick={() => onOpenDiscente(solicitacao.discenteId)}
+          onClick={handleOpenDiscente}
           disabled={!solicitacao.discenteId}
           className="
             w-full sm:w-auto px-2.5 py-1 text-xs font-medium rounded-md
@@ -68,9 +109,7 @@ export default function GerenciarSolicitacaoItem({
         {solicitacao.isAgendada && meetingsBySolicitacao[solicitacao.id] && (
           <button
             type="button"
-            onClick={() =>
-              onOpenMeeting(meetingsBySolicitacao[solicitacao.id])
-            }
+            onClick={handleOpenMeeting}
             className="
               w-full sm:w-auto px-2.5 py-1 text-xs font-medium rounded-md
               text-emerald-700 bg-emerald-50 border border-emerald-200
@@ -82,17 +121,20 @@ export default function GerenciarSolicitacaoItem({
           </button>
         )}
 
-        <Link
-          to={onOpenScheduling(solicitacao.id)}
-          className="
-            w-full sm:w-auto px-2.5 py-1 text-xs font-medium rounded-md
-            text-blue-600 border border-blue-600
-            hover:bg-blue-50
-            transition
-          "
-        >
-          Agendar sessão
-        </Link>
+        {!isAgendada && (
+          <Link
+            to={onOpenScheduling(solicitacao.id)}
+            onClick={stopPropagateIfEvent}
+            className="
+              w-full sm:w-auto px-2.5 py-1 text-xs font-medium rounded-md
+              text-blue-600 border border-blue-600
+              hover:bg-blue-50
+              transition
+            "
+          >
+            Agendar sessão
+          </Link>
+        )}
       </div>
     </li>
   );
