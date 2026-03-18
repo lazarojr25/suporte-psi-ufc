@@ -2,6 +2,9 @@ import React from 'react';
 
 const meetingStatusBadge = (status) => {
   const normalized = (status || '').toString().toLowerCase();
+  if (normalized.includes('erro')) {
+    return 'bg-rose-100 text-rose-800 border-rose-200';
+  }
   if (normalized.includes('concl')) {
     return 'bg-emerald-100 text-emerald-800 border-emerald-200';
   }
@@ -34,10 +37,12 @@ export default function SolicitacaoDetalheMeeting({ meeting, onOpenMeeting }) {
           </div>
           <span
             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${meetingStatusBadge(
-              meeting.status,
+              meeting.status || 'agendada',
             )}`}
           >
-            {meeting.status || 'Status indefinido'}
+            {meeting.status === 'erro_transcricao'
+              ? 'Erro de transcrição'
+              : meeting.status || 'Status indefinido'}
           </span>
           {meeting.createdAt && (
             <p className="text-xs text-gray-500">
