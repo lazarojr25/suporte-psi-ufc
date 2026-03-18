@@ -431,6 +431,7 @@ Se não foi você, ignore esta mensagem.`;
       completionNotes,
       informalNotes,
       clinicalRecord,
+      transcriptionReview,
     } = payload;
 
     const current = meetingRef.snap.data() || {};
@@ -447,6 +448,7 @@ Se não foi você, ignore esta mensagem.`;
     if (completionNotes !== undefined) updates.completionNotes = completionNotes;
     if (informalNotes !== undefined) updates.informalNotes = informalNotes;
     if (clinicalRecord !== undefined) updates.clinicalRecord = clinicalRecord;
+    if (transcriptionReview !== undefined) updates.transcriptionReview = transcriptionReview;
 
     const scheduleChanged =
       (scheduledDate && scheduledDate !== current.scheduledDate) ||

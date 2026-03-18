@@ -23,9 +23,21 @@ export default function MeetingDetalhe() {
     clinicalRecord,
     setClinicalRecord,
 
-    saving,
-    saveMsg,
-    saveErr,
+    clinicalSaving,
+    clinicalSaveMsg,
+    clinicalSaveErr,
+    notesSaving,
+    notesSaveMsg,
+    notesSaveErr,
+    transcriptionAnalysis,
+    transcriptionReview,
+    setReviewField,
+    setReviewChecklistItem,
+    applyAiSummaryToClinical,
+    reviewChecklistMissing,
+    reviewChecklistTemplate,
+    isClinicalSaveBlocked,
+    isReviewRequired,
 
     scheduleDate,
     scheduleTime,
@@ -51,11 +63,12 @@ export default function MeetingDetalhe() {
 
     statusBadgeMeta,
 
-    handleSave,
     handleReschedule,
     handleCancelMeeting,
     handleUpload,
     handleTxtUpload,
+    handleClinicalSave,
+    handleNotesSave,
   } = useMeetingDetalheData(meetingId);
 
   const handleClinicalRecordChange = (key, value) => {
@@ -103,18 +116,31 @@ export default function MeetingDetalhe() {
       <MeetingDetalheRelatorio
         clinicalRecord={clinicalRecord}
         onClinicalRecordChange={handleClinicalRecordChange}
-        onSave={handleSave}
-        saving={saving}
-        saveMsg={saveMsg}
-        saveErr={saveErr}
+        onSave={handleClinicalSave}
+        saving={clinicalSaving}
+        saveMsg={clinicalSaveMsg}
+        saveErr={clinicalSaveErr}
+        transcriptionAnalysis={transcriptionAnalysis}
+        transcriptionReview={transcriptionReview}
+        onReviewFieldChange={setReviewField}
+        onReviewChecklistChange={setReviewChecklistItem}
+        onUseAiSummary={applyAiSummaryToClinical}
+        saveBlockedMessage={
+          isClinicalSaveBlocked ? 'Revisão humana pendente para salvar o relatório.' : null
+        }
+        checklistTemplate={reviewChecklistTemplate}
+        isReviewRequired={isReviewRequired}
+        missingChecklistItems={reviewChecklistMissing}
       />
 
       <MeetingDetalheAnotacoes
         meeting={meeting}
         informalNotes={informalNotes}
         onInformalNotesChange={setInformalNotes}
-        onSave={handleSave}
-        saving={saving}
+        onSave={handleNotesSave}
+        saving={notesSaving}
+        saveMsg={notesSaveMsg}
+        saveErr={notesSaveErr}
       />
 
       <MeetingDetalheTranscricao

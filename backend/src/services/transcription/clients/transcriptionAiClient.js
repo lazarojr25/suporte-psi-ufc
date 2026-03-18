@@ -1,6 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
-import { buildTranscriptionAnalysisPrompt } from '../utils/transcriptionPrompt.js';
+import {
+  buildTranscriptionAnalysisPrompt,
+  TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+} from '../utils/transcriptionPrompt.js';
 
 dotenv.config();
 
@@ -26,6 +29,33 @@ export default class TranscriptionAiClient {
           (result.response && typeof result.response.text === 'function'
             ? result.response.text()
             : '');
+  }
+
+  _cleanJsonText(rawText) {
+    if (!rawText) return '';
+    const normalized = rawText.trim();
+    if (normalized.startsWith('```')) {
+      const withoutFence = normalized.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/```$/m, '');
+      return withoutFence.trim();
+    }
+    return normalized;
+  }
+
+  _extractJson(rawText) {
+    const cleaned = this._cleanJsonText(rawText);
+    if (!cleaned) return null;
+
+    try {
+      return JSON.parse(cleaned);
+    } catch (error) {
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        const candidate = cleaned.slice(start, end + 1);
+        return JSON.parse(candidate);
+      }
+      throw error;
+    }
   }
 
   async transcribeAudio(audioPath, mimeType = 'audio/wav') {
@@ -91,6 +121,15 @@ export default class TranscriptionAiClient {
     });
 
     const raw = this.extractResponseText(result);
-    return JSON.parse(raw);
+    const parsed = this._extractJson(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Gemini retornou resposta JSON inválida para análise.');
+    }
+
+    return {
+      ...parsed,
+      schemaVersion: parsed.schemaVersion || TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
+      model: parsed.model || this.modelName,
+    };
   }
 }

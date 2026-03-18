@@ -19,6 +19,11 @@ const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos por etapa
 const SEGMENT_THRESHOLD_MB = 90;
 const SEGMENT_SECONDS = 600; // 10 min
 
+const envNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 const withTimeout = (command, reject) => {
   const timer = setTimeout(() => {
     try {
@@ -37,6 +42,128 @@ class TranscriptionMediaJobService {
     this.workDirectory = workDirectory;
     this.reprocessInFlight = false;
     this.reprocessLocks = new Set();
+    this.debounceTimerMs = envNumber(process.env.TRANSCRIPTION_DEBOUNCE_MS, 1200);
+    this.maxRetryAttempts = envNumber(
+      process.env.TRANSCRIPTION_MAX_RETRIES,
+      2,
+    );
+    this.retryBaseDelayMs = envNumber(process.env.TRANSCRIPTION_RETRY_BASE_MS, 900);
+    this.retryMaxDelayMs = envNumber(process.env.TRANSCRIPTION_RETRY_MAX_MS, 8000);
+    this.retryJitterMs = envNumber(process.env.TRANSCRIPTION_RETRY_JITTER_MS, 250);
+    this.queue = [];
+    this.queueRunning = false;
+    this.debounceJobs = new Map();
+  }
+
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  _generateJobId() {
+    return `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  _buildDebounceKey({ fileName, extraInfo = {} }) {
+    const discenteId = extraInfo.discenteId || 'sem-discente';
+    const meetingId = extraInfo.meetingId || 'sem-encontro';
+    const safeFile = fileName ? path.basename(fileName) : 'arquivo';
+    return `${meetingId}::${discenteId}::${safeFile}`;
+  }
+
+  _isRetryableError(error) {
+    const raw = `${error?.message || ''} ${error?.code || ''}`.toLowerCase();
+    const nonRetryPatterns = ['enoent', 'permission', 'invalid', 'validation', 'schema', 'malformed'];
+    return !nonRetryPatterns.some((token) => raw.includes(token));
+  }
+
+  _calculateRetryDelayMs(attemptIndex) {
+    const exponential = this.retryBaseDelayMs * Math.pow(2, attemptIndex);
+    const capped = Math.min(exponential, this.retryMaxDelayMs);
+    const jitter = Math.floor(Math.random() * this.retryJitterMs);
+    return capped + jitter;
+  }
+
+  async _runJobWithRetry(payload) {
+    const maxAttempts = Math.max(0, this.maxRetryAttempts) + 1;
+    let lastResult = { success: false, message: 'Falha desconhecida' };
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const isFinalAttempt = attempt === maxAttempts;
+      lastResult = await this.processMediaJob({
+        ...payload,
+        attempt,
+        maxAttempts,
+        cleanupSource: isFinalAttempt,
+      });
+
+      if (lastResult.success) {
+        return lastResult;
+      }
+
+      if (!lastResult.retryable || attempt >= maxAttempts) {
+        if (this._isRetryableError({ message: lastResult.message }) === false) {
+          return lastResult;
+        }
+        return lastResult;
+      }
+
+      const waitMs = this._calculateRetryDelayMs(attempt - 1);
+      console.warn(
+        `[transcription-job ${payload.jobId}] Tentativa ${attempt}/${maxAttempts} falhou; retry em ${waitMs}ms`,
+      );
+      this._safeUpdateMeeting(payload.updateMeetingSafe, payload.extraInfo?.meetingId, {
+        status: 'em_processamento',
+        updatedAt: new Date().toISOString(),
+        tentativaTranscricao: attempt,
+        maxTentativas: maxAttempts,
+      });
+      await this._sleep(waitMs);
+    }
+
+    return lastResult;
+  }
+
+  async _drainQueue() {
+    if (this.queueRunning) return;
+    this.queueRunning = true;
+
+    try {
+      while (this.queue.length > 0) {
+        const payload = this.queue.shift();
+        await this._runJobWithRetry(payload);
+      }
+    } finally {
+      this.queueRunning = false;
+    }
+  }
+
+  _scheduleJobWithDebounce(params, options = {}) {
+    const key = this._buildDebounceKey(params);
+    const existing = this.debounceJobs.get(key);
+    const jobId = existing?.jobId || options.jobId || this._generateJobId();
+
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+
+    const payload = {
+      ...params,
+      jobId,
+      attempt: 1,
+      maxAttempts: Math.max(1, this.maxRetryAttempts + 1),
+      cleanupSource: true,
+    };
+
+    const timer = setTimeout(async () => {
+      this.debounceJobs.delete(key);
+      this.queue.push(payload);
+      await this._drainQueue().catch((err) =>
+        console.error(`[transcription-job ${jobId}] Falha ao esvaziar fila:`, err),
+      );
+    }, this.debounceTimerMs);
+
+    this.debounceJobs.set(key, { ...payload, timer });
+    return jobId;
   }
 
   _safeUpdateMeeting(updateMeetingSafe, meetingId, payload) {
@@ -115,7 +242,16 @@ class TranscriptionMediaJobService {
     }
   }
 
-  async processMediaJob({ filePath, fileName, extraInfo, jobId, updateMeetingSafe }) {
+  async processMediaJob({
+    filePath,
+    fileName,
+    extraInfo,
+    jobId,
+    updateMeetingSafe,
+    attempt = 1,
+    maxAttempts = 1,
+    cleanupSource = true,
+  }) {
     let workDir = null;
     let segDir = null;
     const originalPath = filePath;
@@ -130,6 +266,8 @@ class TranscriptionMediaJobService {
       this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
         status: 'em_processamento',
         updatedAt: new Date().toISOString(),
+        tentativaTranscricao: attempt,
+        maxTentativas: maxAttempts,
       });
 
       const wavPath = await this._convertToWav16kMono(originalPath, workDir, baseName);
@@ -242,29 +380,32 @@ class TranscriptionMediaJobService {
       };
     } catch (error) {
       console.error(`[transcription-job ${jobId}] Erro no processamento:`, error);
-      this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
-        status: 'erro_transcricao',
-        updatedAt: new Date().toISOString(),
-      });
-      return { success: false, message: error?.message || 'Erro no processamento de mídia' };
+      const shouldMarkFailed = attempt >= maxAttempts;
+      if (shouldMarkFailed) {
+        this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
+          status: 'erro_transcricao',
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      return {
+        success: false,
+        message: error?.message || 'Erro no processamento de mídia',
+        retryable: this._isRetryableError(error),
+      };
     } finally {
-      if (originalPath) removeIfExists(originalPath);
       if (workDir) removeDir(workDir);
       if (segDir) removeDir(segDir);
+      if (originalPath && cleanupSource && attempt >= maxAttempts) {
+        removeIfExists(originalPath);
+      }
     }
   }
 
   startAsyncTranscriptionJob(params, { updateMeetingSafe } = {}) {
-    const jobId =
-      params.jobId ||
-      `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    setImmediate(() => {
-      this.processMediaJob({ ...params, jobId, updateMeetingSafe }).catch((err) =>
-        console.error(`[transcription-job ${jobId}] Falha geral:`, err),
-      );
-    });
-
+    const jobId = this._scheduleJobWithDebounce(
+      { ...params, updateMeetingSafe },
+      { jobId: params.jobId || this._generateJobId() },
+    );
     return jobId;
   }
 

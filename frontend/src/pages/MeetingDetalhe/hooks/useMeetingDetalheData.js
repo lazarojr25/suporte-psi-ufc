@@ -20,9 +20,24 @@ export default function useMeetingDetalheData(meetingId) {
   const [informalNotes, setInformalNotes] = useState('');
   const [clinicalRecord, setClinicalRecord] = useState(createEmptyClinicalRecord());
 
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState(null);
-  const [saveErr, setSaveErr] = useState(null);
+  const [clinicalSaving, setClinicalSaving] = useState(false);
+  const [clinicalSaveMsg, setClinicalSaveMsg] = useState(null);
+  const [clinicalSaveErr, setClinicalSaveErr] = useState(null);
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaveMsg, setNotesSaveMsg] = useState(null);
+  const [notesSaveErr, setNotesSaveErr] = useState(null);
+  const [transcriptionAnalysis, setTranscriptionAnalysis] = useState(null);
+  const [transcriptionReview, setTranscriptionReview] = useState({
+    requiredByModel: false,
+    sourceSummary: '',
+    summaryDraft: '',
+    reviewNotes: '',
+    checklist: {},
+    reviewedBy: '',
+    reviewedAt: '',
+    status: 'pendente',
+  });
+  const [reviewChecklistMissing, setReviewChecklistMissing] = useState(null);
 
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
@@ -41,6 +56,112 @@ export default function useMeetingDetalheData(meetingId) {
   const [txtMsg, setTxtMsg] = useState(null);
   const [txtErr, setTxtErr] = useState(null);
 
+  const reviewChecklistTemplate = useMemo(
+    () => [
+      {
+        key: 'resumoConferido',
+        label: 'Conferi se o resumo automático condiz com a sessão.',
+      },
+      {
+        key: 'sinaisConfiaveis',
+        label: 'Avaliei os sinais de risco e os registrei quando necessário.',
+      },
+      {
+        key: 'textoRelevante',
+        label: 'Revisarei os pontos clínicos críticos antes de inserir no relatório final.',
+      },
+    ],
+    [],
+  );
+
+  const buildReviewChecklist = (existing = null) => {
+    const base = {};
+    reviewChecklistTemplate.forEach((item) => {
+      base[item.key] = Boolean(existing?.[item.key]);
+    });
+    return base;
+  };
+
+  const buildTranscriptionReview = (analysis = null, persisted = null) => {
+    const checklist = buildReviewChecklist(persisted?.checklist);
+    return {
+      requiredByModel:
+        persisted?.requiredByModel ??
+        Boolean(analysis?.humanReviewRequired),
+      sourceSummary: analysis?.summary || '',
+      summaryDraft: persisted?.summaryDraft ?? analysis?.summary ?? '',
+      reviewNotes: persisted?.reviewNotes || persisted?.notes || '',
+      checklist,
+      reviewedBy: persisted?.reviewedBy || '',
+      reviewedAt: persisted?.reviewedAt || '',
+      status: persisted?.status || 'pendente',
+    };
+  };
+
+  const loadTranscriptionReviewData = async (meetingData) => {
+    setTranscriptionAnalysis(null);
+    setReviewChecklistMissing(null);
+    const fileName = meetingData?.transcriptionFileName;
+    if (!fileName) {
+      const nextReview = buildTranscriptionReview(null, meetingData?.transcriptionReview || null);
+      setTranscriptionReview(nextReview);
+      updateReviewChecklistMissing(nextReview);
+      return;
+    }
+    try {
+      const transcriptionRes = await apiService.getTranscription(fileName);
+      const analysis = transcriptionRes?.data?.analysis || null;
+      setTranscriptionAnalysis(analysis || null);
+      const persistedReview =
+        meetingData?.transcriptionReview && typeof meetingData.transcriptionReview === 'object'
+          ? meetingData.transcriptionReview
+          : null;
+      const nextReview = buildTranscriptionReview(analysis, persistedReview);
+      setTranscriptionReview(nextReview);
+      updateReviewChecklistMissing(nextReview);
+    } catch (err) {
+      console.error('Erro ao carregar análise de transcrição:', err);
+      setTranscriptionAnalysis(null);
+      const nextReview = buildTranscriptionReview(meetingData?.analysisHint || null, null);
+      setTranscriptionReview(nextReview);
+      updateReviewChecklistMissing(nextReview);
+    }
+  };
+
+  const updateReviewChecklistMissing = (nextReview) => {
+    const required = Boolean(nextReview.requiredByModel);
+    if (!required) {
+      setReviewChecklistMissing(null);
+      return;
+    }
+
+    const notChecked = reviewChecklistTemplate.filter(
+      (item) => !nextReview?.checklist?.[item.key],
+    );
+    setReviewChecklistMissing(notChecked.length ? notChecked.map((item) => item.label) : null);
+  };
+
+  const isReviewRequired = useMemo(
+    () =>
+      Boolean(
+        transcriptionReview.requiredByModel ||
+          transcriptionAnalysis?.humanReviewRequired ||
+          (transcriptionAnalysis?.summaryConfidence !== null &&
+            transcriptionAnalysis?.summaryConfidence < 0.65),
+      ),
+    [transcriptionReview.requiredByModel, transcriptionAnalysis],
+  );
+
+  const isClinicalSaveBlocked = useMemo(() => {
+    if (!isReviewRequired) return false;
+    const notChecked = reviewChecklistTemplate.some((item) => !transcriptionReview.checklist?.[item.key]);
+    return (
+      notChecked ||
+      !transcriptionReview.summaryDraft ||
+      !transcriptionReview.summaryDraft.trim()
+    );
+  }, [isReviewRequired, reviewChecklistTemplate, transcriptionReview]);
+
   const loadMeeting = async (id) => {
     const resp = await apiService.getMeeting(id);
     if (!resp?.success || !resp.data) {
@@ -53,6 +174,7 @@ export default function useMeetingDetalheData(meetingId) {
     setScheduleTime(m.scheduledTime || '');
     setScheduleDuration(m.duration || 45);
     setClinicalRecord(getClinicalRecordFromMeeting(m));
+    await loadTranscriptionReviewData(m);
 
     setSolicitacao(null);
     if (m.solicitacaoId) {
@@ -87,34 +209,116 @@ export default function useMeetingDetalheData(meetingId) {
     if (updated?.success && updated.data) {
       const m = updated.data?.data || updated.data;
       setMeeting(m);
+      await loadTranscriptionReviewData(m);
       return m;
     }
     return null;
   };
 
-  const handleSave = async () => {
+  const setReviewField = (field, value) => {
+    setTranscriptionReview((prev) => {
+      const next = {
+        ...prev,
+        [field]: value,
+      };
+      if (field === 'checklist' || field === 'summaryDraft' || field === 'reviewNotes') {
+        updateReviewChecklistMissing(next);
+      }
+      return next;
+    });
+  };
+
+  const setReviewChecklistItem = (key, value) => {
+    setTranscriptionReview((prev) => {
+      const next = {
+        ...prev,
+        checklist: {
+          ...(prev.checklist || {}),
+          [key]: Boolean(value),
+        },
+      };
+      updateReviewChecklistMissing(next);
+      return next;
+    });
+  };
+
+  const applyAiSummaryToClinical = () => {
+    const source = transcriptionReview.sourceSummary || '';
+    setClinicalRecord((prev) => ({
+      ...prev,
+      analiseCompreensao: source,
+    }));
+    setReviewField('summaryDraft', source);
+  };
+
+  const handleClinicalSave = async () => {
     if (!meeting) return;
-    setSaving(true);
-    setSaveErr(null);
-    setSaveMsg(null);
+    updateReviewChecklistMissing(transcriptionReview);
+    if (isClinicalSaveBlocked) {
+      setClinicalSaveErr('Conclusão de revisão pendente para salvar o registro clínico.');
+      return;
+    }
+
+    setClinicalSaving(true);
+    setClinicalSaveErr(null);
+    setClinicalSaveMsg(null);
     try {
-      await apiService.updateMeeting(meetingId, {
-        informalNotes,
+      const payload = {
         clinicalRecord: {
           ...clinicalRecord,
           updatedAt: new Date().toISOString(),
         },
+        transcriptionReview: {
+          ...transcriptionReview,
+          status: isReviewRequired ? 'aprovado' : 'naoExigido',
+          reviewedAt: new Date().toISOString(),
+          analysisSnapshot: {
+            humanReviewRequired: transcriptionAnalysis?.humanReviewRequired || false,
+            summaryConfidence: transcriptionAnalysis?.summaryConfidence ?? null,
+            uncertainty:
+              transcriptionAnalysis?.uncertainty?.nivel ||
+              transcriptionAnalysis?.uncertainty?.level ||
+              null,
+          },
+          requiredByModel:
+            transcriptionReview.requiredByModel || transcriptionAnalysis?.humanReviewRequired || false,
+          checklist: transcriptionReview.checklist || {},
+        },
+      };
+      await apiService.updateMeeting(meetingId, {
+        ...payload,
       });
-      setSaveMsg('Registro salvo com sucesso.');
+      setClinicalSaveMsg('Registro e revisão salvos com sucesso.');
       const updated = await refreshMeeting();
       if (updated) {
         setMeeting(updated);
+        await loadTranscriptionReviewData(updated);
       }
     } catch (err) {
       console.error(err);
-      setSaveErr('Não foi possível salvar o registro.');
+      setClinicalSaveErr('Não foi possível salvar o registro.');
     } finally {
-      setSaving(false);
+      setClinicalSaving(false);
+    }
+  };
+
+  const handleNotesSave = async () => {
+    if (!meeting) return;
+    setNotesSaving(true);
+    setNotesSaveErr(null);
+    setNotesSaveMsg(null);
+    try {
+      await apiService.updateMeeting(meetingId, {
+        informalNotes,
+      });
+      setNotesSaveMsg('Anotações salvas com sucesso.');
+      const updated = await refreshMeeting();
+      if (updated) setMeeting(updated);
+    } catch (err) {
+      console.error(err);
+      setNotesSaveErr('Não foi possível salvar anotações.');
+    } finally {
+      setNotesSaving(false);
     }
   };
 
@@ -166,6 +370,7 @@ export default function useMeetingDetalheData(meetingId) {
       const updated = await refreshMeeting();
       if (updated) {
         setMeeting(updated);
+        await loadTranscriptionReviewData(updated);
       }
     } catch (err) {
       console.error(err);
@@ -211,6 +416,7 @@ export default function useMeetingDetalheData(meetingId) {
       const updated = await refreshMeeting();
       if (updated) {
         setMeeting(updated);
+        await loadTranscriptionReviewData(updated);
       }
     } catch (err) {
       console.error(err);
@@ -256,6 +462,7 @@ export default function useMeetingDetalheData(meetingId) {
       const updated = await refreshMeeting();
       if (updated) {
         setMeeting(updated);
+        await loadTranscriptionReviewData(updated);
       }
     } catch (err) {
       console.error(err);
@@ -278,9 +485,21 @@ export default function useMeetingDetalheData(meetingId) {
     clinicalRecord,
     setClinicalRecord,
 
-    saving,
-    saveMsg,
-    saveErr,
+    clinicalSaving,
+    clinicalSaveMsg,
+    clinicalSaveErr,
+    notesSaving,
+    notesSaveMsg,
+    notesSaveErr,
+    isClinicalSaveBlocked,
+    transcriptionAnalysis,
+    transcriptionReview,
+    setReviewField,
+    setReviewChecklistItem,
+    applyAiSummaryToClinical,
+    reviewChecklistMissing,
+    reviewChecklistTemplate,
+    isReviewRequired,
 
     scheduleDate,
     scheduleTime,
@@ -306,7 +525,8 @@ export default function useMeetingDetalheData(meetingId) {
 
     statusBadgeMeta,
 
-    handleSave,
+    handleClinicalSave,
+    handleNotesSave,
     handleReschedule,
     handleCancelMeeting,
     handleUpload,

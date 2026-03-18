@@ -32,6 +32,35 @@ export const formatTranscriptionDocument = (
   if (Array.isArray(analysis.topics) && analysis.topics.length) {
     summaryBlock.push(`Tópicos: ${analysis.topics.join(', ')}`);
   }
+  if (Array.isArray(analysis.riskSignals) && analysis.riskSignals.length) {
+    summaryBlock.push('Sinais de atenção:');
+    analysis.riskSignals.forEach((item, index) => {
+      if (!item || typeof item !== 'object') return;
+      const nivel = item.nivel || item.level || 'médio';
+      const tipo = item.tipo || item.type || 'sinal';
+      const evidencia = item.evidencia || item.evidence || '';
+      summaryBlock.push(
+        `  ${index + 1}. [${nivel.toString().toLowerCase()}] ${tipo}${
+          evidencia ? ` — ${evidencia}` : ''
+        }`,
+      );
+    });
+  }
+  if (analysis.uncertainty) {
+    const nivel = analysis.uncertainty.nivel || analysis.uncertainty.level;
+    if (nivel || analysis.uncertainty.motivos) {
+      summaryBlock.push(`Incerteza: ${nivel || 'média'}`);
+      if (Array.isArray(analysis.uncertainty.motivos)) {
+        summaryBlock.push(`  Motivos: ${analysis.uncertainty.motivos.join('; ')}`);
+      }
+    }
+  }
+  if (typeof analysis.summaryConfidence === 'number') {
+    summaryBlock.push(`Confiança do resumo: ${(analysis.summaryConfidence * 100).toFixed(1)}%`);
+  }
+  if (analysis.humanReviewRequired) {
+    summaryBlock.push('Revisão humana obrigatória recomendada.');
+  }
   if (Array.isArray(analysis.actionableInsights) && analysis.actionableInsights.length) {
     summaryBlock.push('Insights acionáveis:');
     analysis.actionableInsights.forEach((insight, index) => {

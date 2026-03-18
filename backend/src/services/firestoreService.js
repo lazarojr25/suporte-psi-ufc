@@ -4,6 +4,7 @@ const db = getAdminDb();
 
 const PRIMARY_COLLECTION = 'metadados_transcricoes';
 const LEGACY_COLLECTIONS = ['transcriptions_metadata'];
+const OVERVIEW_CACHE_COLLECTION = 'relatorio_geral_cache';
 
 const fetchSnapshots = async (queryBuilder) => {
   const collections = [PRIMARY_COLLECTION, ...LEGACY_COLLECTIONS];
@@ -116,6 +117,33 @@ export async function getAllTranscriptionsMetadata() {
   }
 }
 
+export async function getReportsOverviewCache() {
+  try {
+    const doc = await db
+      .collection(OVERVIEW_CACHE_COLLECTION)
+      .doc('current')
+      .get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  } catch (error) {
+    console.error('ERRO ao buscar cache do overview de relatórios.', error);
+    return null;
+  }
+}
+
+export async function setReportsOverviewCache(payload = {}) {
+  try {
+    await db.collection(OVERVIEW_CACHE_COLLECTION).doc('current').set(
+      {
+        ...(payload || {}),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    console.error('ERRO ao salvar cache do overview de relatórios.', error);
+  }
+}
+
 /**
  * Remove metadados de uma transcrição pelo fileName (docId seguro).
  * @param {string} fileName
@@ -135,5 +163,34 @@ export async function deleteTranscriptionMetadata(fileName) {
     console.log(`Metadados de transcrição removidos do Firestore: ${safeId}`);
   } catch (error) {
     console.error('ERRO ao remover metadados no Firestore.', error);
+  }
+}
+
+export async function markReportsOverviewCacheDirty() {
+  try {
+    const doc = await db
+      .collection(OVERVIEW_CACHE_COLLECTION)
+      .doc('current')
+      .get();
+
+    const base = doc.exists ? doc.data() : {};
+    const currentCount = Number(base?.pendingUpdates || 0) || 0;
+    await db
+      .collection(OVERVIEW_CACHE_COLLECTION)
+      .doc('current')
+      .set(
+        {
+          ...(base || {}),
+          pendingUpdates: currentCount + 1,
+          dirty: true,
+          dirtySince: new Date().toISOString(),
+          lastEventAt: new Date().toISOString(),
+          updatedAt: base?.updatedAt || new Date().toISOString(),
+          refreshScheduledAt: base?.refreshScheduledAt || null,
+        },
+        { merge: true },
+      );
+  } catch (error) {
+    console.warn('Falha ao marcar cache do overview como stale:', error?.message);
   }
 }
