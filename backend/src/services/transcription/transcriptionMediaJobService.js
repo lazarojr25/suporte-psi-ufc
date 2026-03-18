@@ -11,6 +11,7 @@ import {
   shouldReprocessEntry,
   toSafeBase,
 } from './transcriptionHelpers.js';
+import { logTranscriptionProcessingError } from '../firestoreService.js';
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
 ffmpeg.setFfprobePath(ffprobeStatic.path);
@@ -392,8 +393,34 @@ class TranscriptionMediaJobService {
       };
     } catch (error) {
       console.error(`[transcription-job ${jobId}] Erro no processamento:`, error);
-      const retryableError = this._isRetryableError(error);
-      shouldCleanupSource = (cleanupSource && (!retryableError || attempt >= maxAttempts));
+      const shouldMarkFailed = attempt >= maxAttempts;
+      await logTranscriptionProcessingError({
+        source: 'transcription-media-job',
+        stage: 'processing',
+        errorType: 'pipeline',
+        error: error instanceof Error ? error : new Error(String(error)),
+        status: shouldMarkFailed ? 'erro_transcricao' : 'retrying',
+        retryable: this._isRetryableError(error),
+        attempt,
+        maxAttempts,
+        isTerminal: shouldMarkFailed,
+        meetingId: extraInfo?.meetingId || null,
+        discenteId: extraInfo?.discenteId || null,
+        solicitacaoId: extraInfo?.solicitacaoId || null,
+        transcriptFileName: `${path.basename(fileName, path.extname(fileName))}.txt`,
+        jobId: payload.jobId || null,
+        metadata: {
+          originalFile: fileName,
+          status: shouldMarkFailed ? 'erro_transcricao' : 'aguardando-retry',
+        },
+      });
+
+      if (shouldMarkFailed) {
+        this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
+          status: 'erro_transcricao',
+          updatedAt: new Date().toISOString(),
+        });
+      }
       return {
         success: false,
         message: error?.message || 'Erro no processamento de mídia',

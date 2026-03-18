@@ -39,15 +39,27 @@ export default function useListaDiscentesData() {
 
   const discentesFiltrados = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const filtroCurso = cursoFilter.trim().toLowerCase();
+    const selectedCurso = cursoFilter.trim();
+
+    const selectedCursoData = cursoOptions.find((curso) => curso.id === selectedCurso) || null;
+    const cursoMatchValues = selectedCursoData
+      ? new Set(
+          [
+            selectedCursoData.id,
+            selectedCursoData.nome,
+            selectedCursoData.sigla,
+          ]
+            .filter(Boolean)
+            .map((value) => value.toString().trim().toLowerCase()),
+        )
+      : new Set();
 
     return discentes.filter((d) => {
       const matchCurso = cursoFilter
         ? [d.cursoId, d.cursoNome, d.cursoSigla, d.curso]
             .filter(Boolean)
-            .some((value) =>
-              value.toLowerCase().trim() === filtroCurso
-            )
+            .map((value) => value.toString().trim().toLowerCase())
+            .some((value) => cursoMatchValues.has(value))
         : true;
 
       const matchBusca = term
@@ -60,7 +72,7 @@ export default function useListaDiscentesData() {
 
       return matchCurso && matchBusca;
     });
-  }, [discentes, search, cursoFilter]);
+  }, [discentes, search, cursoFilter, cursoOptions]);
 
   return {
     discentesFiltrados,

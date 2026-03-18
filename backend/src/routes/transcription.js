@@ -7,6 +7,10 @@ import TranscriptionService from '../services/transcriptionService.js';
 import { getAdminDb } from '../firebaseAdmin.js';
 import TranscriptionMediaJobService from '../services/transcription/transcriptionMediaJobService.js';
 import {
+  listTranscriptionProcessingErrors,
+  logTranscriptionProcessingError,
+} from '../services/firestoreService.js';
+import {
   buildTranscriptBaseName,
   enrichExtraInfoFromMeeting,
   ensureDir,
@@ -56,6 +60,14 @@ const updateMeetingSafe = async (meetingId, payload) => {
   } catch (e) {
     console.warn('Não foi possível atualizar meeting:', e?.message);
   }
+};
+
+const logProcessingError = async (payload, error) => {
+  return logTranscriptionProcessingError({
+    source: 'transcription-route',
+    ...payload,
+    error: error || payload.error,
+  });
 };
 
 // -------------------- multer (upload) ----------------
@@ -175,9 +187,45 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao agendar processamento de mídia:', error);
+    await logProcessingError(
+      {
+        stage: 'upload',
+        meetingId: req.body?.meetingId || null,
+        discenteId: req.body?.discenteId || null,
+        solicitacaoId: req.body?.solicitacaoId || null,
+      },
+      error,
+    );
     return res.status(500).json({
       success: false,
       message: 'Erro no processamento de mídia',
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/transcription/errors
+router.get('/errors', async (req, res) => {
+  try {
+    const errors = await listTranscriptionProcessingErrors({
+      source: req.query.source,
+      stage: req.query.stage,
+      status: req.query.status,
+      meetingId: req.query.meetingId,
+      discenteId: req.query.discenteId,
+      solicitacaoId: req.query.solicitacaoId,
+      transcriptFileName: req.query.transcriptFileName,
+      fileName: req.query.fileName,
+      jobId: req.query.jobId,
+      limit: req.query.limit,
+    });
+
+    res.json({ success: true, data: errors });
+  } catch (error) {
+    console.error('Erro ao listar erros de processamento de transcrição:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao listar erros de processamento',
       error: error.message,
     });
   }
@@ -320,6 +368,27 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
         }
       }
 
+      await logProcessingError({
+        stage: 'upload-text',
+        source: 'transcription-route',
+        meetingId,
+        discenteId: extraInfo.discenteId,
+        solicitacaoId: extraInfo.solicitacaoId,
+        transcriptFileName: finalFileName,
+        status: result.analysisStatus || 'failed',
+        retryable: false,
+        metadata: {
+          uploadText: {
+            originalName: req.file.originalname,
+            size: req.file.size,
+          },
+          errorSource: 'analysis',
+        },
+        error: {
+          message: result.error || result.analysisError || 'Falha na análise',
+        },
+      });
+
       return res.status(200).json({
         success: false,
         message: result.error || 'Falha ao analisar transcrição.',
@@ -362,6 +431,18 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
     });
   } catch (error) {
     console.error('Erro ao processar transcrição pronta:', error);
+    await logProcessingError(
+      {
+        stage: 'upload-text',
+        source: 'transcription-route',
+        meetingId: req.body?.meetingId || null,
+        discenteId: req.body?.discenteId || null,
+        solicitacaoId: req.body?.solicitacaoId || null,
+        status: 'failed',
+        errorSource: 'unexpected-exception',
+      },
+      error,
+    );
     res.status(500).json({
       success: false,
       message: 'Erro ao processar transcrição pronta',

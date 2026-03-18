@@ -14,6 +14,11 @@ class ApiService {
       return await user.getIdToken();
     } catch (e) {
       console.warn('Falha ao obter ID token:', e?.message);
+      try {
+        return await user.getIdToken(true);
+      } catch (refreshError) {
+        console.warn('Falha ao renovar ID token:', refreshError?.message);
+      }
       return null;
     }
   }
@@ -21,6 +26,7 @@ class ApiService {
   // Método genérico para fazer requisições
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    const skipAuth = options.skipAuth || false;
 
     // Detecta se o body é FormData
     const isFormData = options?.body instanceof FormData;
@@ -34,19 +40,38 @@ class ApiService {
     }
 
     // Anexa token de auth, exceto se explicitamente ignorado
-    const token = options.skipAuth ? null : await this.getAuthToken();
-    if (!options.skipAuth && token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
+    const token = skipAuth ? null : await this.getAuthToken();
 
-    const config = {
-      ...options,
-      headers
+    const executeRequest = async (tokenToUse) => {
+      const requestHeaders = {
+        ...headers,
+      };
+      if (!skipAuth && tokenToUse) {
+        requestHeaders.Authorization = `Bearer ${tokenToUse}`;
+      } else if (!skipAuth) {
+        delete requestHeaders.Authorization;
+      }
+
+      return fetch(url, {
+        ...options,
+        headers: requestHeaders,
+      });
     };
 
-    try {
-      const response = await fetch(url, config);
+    let response = await executeRequest(token);
 
+    if (!skipAuth && response.status === 401 && auth.currentUser) {
+      try {
+        const refreshedToken = await auth.currentUser.getIdToken(true);
+        if (refreshedToken && refreshedToken !== token) {
+          response = await executeRequest(refreshedToken);
+        }
+      } catch (error) {
+        console.warn('Falha ao renovar token para retry:', error?.message);
+      }
+    }
+
+    try {
       // Tenta decidir automaticamente como parsear
       const contentType = response.headers.get('content-type') || '';
       let data;

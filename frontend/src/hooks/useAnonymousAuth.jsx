@@ -1,11 +1,21 @@
 import { useEffect } from 'react';
 import { auth } from '../services/firebase';
-import { signInAnonymously } from 'firebase/auth';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 
 export function useAnonymousAuth() {
   useEffect(() => {
-    signInAnonymously(auth).catch((error) => {
-      console.error('Erro no login anônimo:', error);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser && !currentUser.isAnonymous) {
+        return;
+      }
+
+      signInAnonymously(auth).catch((error) => {
+        if (error?.code !== 'auth/operation-not-allowed') {
+          console.error('Erro no login anônimo:', error);
+        }
+      });
     });
+
+    return () => unsubscribe();
   }, []);
 }

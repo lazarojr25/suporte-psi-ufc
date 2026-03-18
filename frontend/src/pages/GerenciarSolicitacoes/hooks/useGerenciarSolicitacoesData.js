@@ -71,6 +71,20 @@ export default function useGerenciarSolicitacoesData() {
     fetchSolicitacoes();
   }, []);
 
+  const cursoOptions = useMemo(
+    () => buildCursoOptions(cursoCatalogOptions),
+    [cursoCatalogOptions]
+  );
+  const cursoSelected = cursoOptions.find((c) => c.id === curso) || null;
+
+  const cursoNomeSet = useMemo(() => {
+    if (!cursoSelected) return null;
+    return new Set([
+      cursoSelected.nome.toLowerCase(),
+      cursoSelected.sigla.toLowerCase(),
+    ].filter(Boolean));
+  }, [cursoSelected]);
+
   const filteredSolicitacoes = useMemo(() => {
     const termName = searchName.trim().toLowerCase();
     const termMat = searchMatricula.trim().toLowerCase();
@@ -96,16 +110,16 @@ export default function useGerenciarSolicitacoesData() {
             s.curso,
           ]
             .filter(Boolean)
-            .some((value) => value.toLowerCase() === curso.toLowerCase())
+            .map((value) => value.toString().trim().toLowerCase())
+            .some((value) => {
+              if (value === curso) return true;
+              if (cursoNomeSet && cursoNomeSet.has(value)) return true;
+              return false;
+            })
         : true;
       return nameMatch && matMatch && cursoMatch;
     });
-  }, [solicitacoes, searchName, searchMatricula, startDate, endDate, curso]);
-
-  const cursoOptions = useMemo(
-    () => buildCursoOptions(solicitacoes, cursoCatalogOptions),
-    [solicitacoes, cursoCatalogOptions]
-  );
+  }, [solicitacoes, searchName, searchMatricula, startDate, endDate, curso, cursoNomeSet]);
 
   const pendentes = useMemo(
     () => filteredSolicitacoes.filter((s) => normalizeStatus(s.status) === 'pendente'),
