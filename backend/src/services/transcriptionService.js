@@ -97,9 +97,16 @@ class TranscriptionService {
       transcriptionText = await this.aiClient.transcribeAudio(audioPath);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para transcrição:', error);
-      transcriptionText = `[ERRO NA TRANSCRIÇÃO: ${error.message}] Simulação de transcrição para ${path.basename(
-        audioPath,
-      )}.`;
+      return {
+        success: false,
+        error: error?.message || 'Falha ao transcrever áudio.',
+        transcription: null,
+        analysis: null,
+        analysisStatus: ANALYSIS_STATUS.FAILED,
+        analysisError: error?.message || 'Falha ao transcrever áudio.',
+        metadata: null,
+        fileName: null,
+      };
     }
 
     if (outputFileName === null) {

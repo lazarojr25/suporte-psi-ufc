@@ -5,6 +5,11 @@ const db = getAdminDb();
 const TRANSCRIPTION_METADATA_COLLECTION = 'metadados_transcricoes';
 const OVERVIEW_CACHE_COLLECTION = 'relatorio_geral_cache';
 
+const normalizeDiscenteId = (value) => {
+  if (value === null || value === undefined) return null;
+  return String(value).trim();
+};
+
 const fetchSnapshots = async (queryBuilder) => {
   const ref = queryBuilder(db.collection(TRANSCRIPTION_METADATA_COLLECTION));
   return ref.get();
@@ -65,11 +70,24 @@ export async function saveTranscriptionMetadata(data) {
  * @returns {Promise<Array<object>>} Lista de metadados.
  */
 export async function getTranscriptionsByDiscenteId(discenteId) {
+  const normalizedDiscenteId = normalizeDiscenteId(discenteId);
+  if (!normalizedDiscenteId) return [];
+
   try {
     const queryBuilder = (ref) =>
-      ref.where('metadata.discenteId', '==', discenteId);
+      ref.where('metadata.discenteId', '==', normalizedDiscenteId);
     const docs = await readTranscriptionMetadata(queryBuilder);
-    return docs.filter((doc) => doc?.metadata?.discenteId === discenteId);
+    if (docs.length > 0) {
+      return docs.filter(
+        (doc) => normalizeDiscenteId(doc?.metadata?.discenteId) === normalizedDiscenteId,
+      );
+    }
+
+    // Fallback para casos legados com espaços/sufixos no ID (sem depender de índice composto).
+    const allDocs = await readTranscriptionMetadata((ref) => ref);
+    return allDocs.filter(
+      (doc) => normalizeDiscenteId(doc?.metadata?.discenteId) === normalizedDiscenteId,
+    );
   } catch (error) {
     console.error('ERRO ao buscar metadados no Firestore.', error);
     return [];

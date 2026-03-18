@@ -20,6 +20,7 @@ export default function SessoesFilters({
           <option value="">Todos</option>
           <option value="agendada">Agendadas</option>
           <option value="em_processamento">Processando</option>
+          <option value="erro_transcricao">Erro de transcrição</option>
           <option value="concluida">Concluídas</option>
           <option value="cancelada">Canceladas</option>
         </select>

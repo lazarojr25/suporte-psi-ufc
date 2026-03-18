@@ -7,6 +7,7 @@ export default function SessoesHeader({ summary }) {
     emProcessamento = 0,
     concluida = 0,
     cancelada = 0,
+    erroTranscricao = 0,
   } = summary || {};
 
   return (
@@ -35,6 +36,10 @@ export default function SessoesHeader({ summary }) {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
           <p className="text-[11px] uppercase text-emerald-700">Concluídas</p>
           <p className="text-xl font-bold text-emerald-900">{concluida}</p>
+        </div>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+          <p className="text-[11px] uppercase text-rose-700">Erro de transcrição</p>
+          <p className="text-xl font-bold text-rose-900">{erroTranscricao}</p>
         </div>
         <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
           <p className="text-[11px] uppercase text-red-700">Canceladas</p>

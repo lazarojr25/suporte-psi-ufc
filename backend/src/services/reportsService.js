@@ -1756,9 +1756,26 @@ class ReportsService {
   }
 
   async getByDiscenteData(discenteId) {
-    const filtered = await this.transcriptionService.listTranscriptionsWithMetadata({
+    const normalizedDiscenteId = this._safeToString(discenteId);
+    if (!normalizedDiscenteId) {
+      return {
+        totalTranscriptions: 0,
+        totalSizeBytes: 0,
+        sentimentsAvg: null,
+        transcriptions: [],
+        historyPatterns: {},
+        monthlySentimentTimeline: [],
+      };
+    }
+
+    const list = await this.transcriptionService.listTranscriptionsWithMetadata({
       discenteId,
     });
+
+    const filtered = list.filter((entry) =>
+      this._safeToString(entry?.metadata?.discenteId) === normalizedDiscenteId,
+    );
+
     const orderedTranscriptions = [...filtered].sort((a, b) => {
       const dateA = this._toDate(a?.createdAt)?.getTime() || 0;
       const dateB = this._toDate(b?.createdAt)?.getTime() || 0;

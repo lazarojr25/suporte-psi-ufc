@@ -6,6 +6,11 @@ import {
   markReportsOverviewCacheDirty,
 } from '../../firestoreService.js';
 
+const normalizeDiscenteId = (value) => {
+  if (value === null || value === undefined) return null;
+  return String(value).trim();
+};
+
 export default class TranscriptionMetadataRepository {
   constructor(storage) {
     this.storage = storage;
@@ -13,6 +18,10 @@ export default class TranscriptionMetadataRepository {
 
   async list(filters = {}) {
     const { discenteId } = filters;
+    const normalizedDiscenteId = normalizeDiscenteId(discenteId);
+    const normalizeAndMatchDiscenteId = (entry) =>
+      normalizeDiscenteId(entry?.metadata?.discenteId) === normalizedDiscenteId;
+
     try {
       let firestoreMetadata = [];
       if (discenteId) {
@@ -30,7 +39,12 @@ export default class TranscriptionMetadataRepository {
       );
     }
 
-    return Object.values(this.storage.loadMetadata());
+    const localMetadata = Object.values(this.storage.loadMetadata());
+    if (!normalizedDiscenteId) {
+      return localMetadata;
+    }
+
+    return localMetadata.filter(normalizeAndMatchDiscenteId);
   }
 
   async saveCombinedMetadata(fileName, content, extraInfo, analysis, analysisStatus = 'ok', analysisError = null) {

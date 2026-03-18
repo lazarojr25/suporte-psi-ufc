@@ -21,7 +21,9 @@ export const formatDateLabel = (dateStr) => {
 };
 
 export const normalizeMeetingStatus = (status = '') =>
-  status === 'processando' ? 'em_processamento' : String(status || '').toLowerCase();
+  status === 'processando'
+    ? 'em_processamento'
+    : String(status || '').toLowerCase().trim();
 
 export const getMeetingStatusBadgeMeta = (status = '') => {
   const normalizedStatus = normalizeMeetingStatus(status);
@@ -55,6 +57,13 @@ export const getMeetingStatusBadgeMeta = (status = '') => {
     return {
       text: 'Cancelada',
       className: `${base} bg-red-100 text-red-800`,
+    };
+  }
+
+  if (normalizedStatus === 'erro_transcricao') {
+    return {
+      text: 'Erro de transcrição',
+      className: `${base} bg-rose-100 text-rose-800`,
     };
   }
 

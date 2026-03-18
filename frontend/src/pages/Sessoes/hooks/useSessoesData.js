@@ -63,6 +63,7 @@ export default function useSessoesData() {
       emProcessamento: 0,
       concluida: 0,
       cancelada: 0,
+      erroTranscricao: 0,
     };
 
     filteredMeetings.forEach((meeting) => {
@@ -71,6 +72,7 @@ export default function useSessoesData() {
       else if (status === 'em_processamento') totals.emProcessamento += 1;
       else if (status === 'concluida') totals.concluida += 1;
       else if (status === 'cancelada') totals.cancelada += 1;
+      else if (status === 'erro_transcricao') totals.erroTranscricao += 1;
     });
 
     return totals;
