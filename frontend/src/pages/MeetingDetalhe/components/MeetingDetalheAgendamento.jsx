@@ -13,11 +13,12 @@ export default function MeetingDetalheAgendamento({
   scheduleWarn,
   meetingLink,
   isEditable,
+  containerClassName = '',
 }) {
   if (!isEditable) return null;
 
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3">
+    <div className={`bg-white rounded-xl shadow p-4 space-y-3 ${containerClassName}`}>
       <div className="flex items-center justify-between">
         <p className="text-xs uppercase text-gray-500">Agendamento</p>
         {scheduleMsg && <span className="text-[11px] text-green-600">{scheduleMsg}</span>}

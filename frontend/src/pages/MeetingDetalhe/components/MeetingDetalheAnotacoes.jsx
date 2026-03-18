@@ -8,14 +8,15 @@ export default function MeetingDetalheAnotacoes({
   saving,
   saveMsg,
   saveErr,
+  containerClassName = '',
 }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3">
+    <div className={`bg-white rounded-xl shadow p-4 space-y-3 ${containerClassName}`}>
       <div className="flex items-center justify-between">
         <p className="text-xs uppercase text-gray-500">Anotações informais</p>
-        {meeting.informalNotes && (
+        {meeting?.informalNotes && (
           <span className="text-[11px] text-gray-500">
-            Última atualização: {formatDateLabel(meeting.updatedAt || meeting.createdAt)}
+            Última atualização: {formatDateLabel((meeting && (meeting.updatedAt || meeting.createdAt)) || null)}
           </span>
         )}
       </div>

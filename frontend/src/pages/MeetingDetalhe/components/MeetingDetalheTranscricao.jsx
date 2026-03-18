@@ -12,9 +12,10 @@ export default function MeetingDetalheTranscricao({
   txtMsg,
   txtErr,
   isConcluida,
+  containerClassName = '',
 }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3">
+    <div className={`bg-white rounded-xl shadow p-4 space-y-3 ${containerClassName}`}>
       <div className="flex items-center justify-between">
         <p className="text-xs uppercase text-gray-500">Transcrição</p>
         {uploadMsg && <span className="text-[11px] text-green-600">{uploadMsg}</span>}
