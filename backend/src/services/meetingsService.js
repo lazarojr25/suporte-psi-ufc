@@ -118,7 +118,7 @@ class MeetingsService {
     };
   }
 
-  async createMeeting(payload) {
+  async createMeeting(payload, currentUser = null) {
     this._requireDb();
     const {
       solicitacaoId,
@@ -176,6 +176,9 @@ class MeetingsService {
     const nowIso = new Date().toISOString();
     const dateObj = toDateTime(scheduledDate, scheduledTime);
     const dateTimeIso = dateObj ? dateObj.toISOString() : null;
+    const ownerUid = currentUser?.uid || payload.ownerUid || null;
+    const ownerEmailRaw = currentUser?.email || payload.ownerEmail || null;
+    const ownerEmail = ownerEmailRaw ? ownerEmailRaw.toString().trim().toLowerCase() : null;
 
     const newMeeting = {
       solicitacaoId,
@@ -190,6 +193,10 @@ class MeetingsService {
       status: 'agendada',
       createdAt: nowIso,
       dateTime: dateTimeIso,
+      ownerUid,
+      ownerEmail,
+      createdByUid: ownerUid,
+      createdByEmail: ownerEmail,
       meetLink: null,
       calendarEventId: null,
       transcriptionId: null,

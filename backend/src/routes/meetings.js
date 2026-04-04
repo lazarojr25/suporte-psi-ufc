@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const result = await meetingsService.createMeeting(req.body || {});
+    const result = await meetingsService.createMeeting(req.body || {}, req.user || null);
     return withStatus(res, result);
   } catch (error) {
     console.error('Erro ao agendar reunião:', error);

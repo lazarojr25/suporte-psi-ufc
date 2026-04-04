@@ -17,6 +17,8 @@ export default function AgendaSidebar({
   onStatusFilterChange,
   onSelectEvent,
   onNavigate,
+  isMainView = false,
+  emptyMessage = 'Nenhum evento para esta data.',
 }) {
   const getTypeClass = (type) =>
     type === 'meeting'
@@ -24,10 +26,16 @@ export default function AgendaSidebar({
       : 'bg-amber-100 text-amber-800 border-amber-200';
 
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3 min-h-0 h-full flex flex-col overflow-hidden">
+    <div
+      className={`bg-white rounded-xl shadow space-y-3 min-h-0 h-full flex flex-col overflow-hidden ${
+        isMainView ? 'p-5' : 'p-4'
+      }`}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[11px] uppercase text-gray-500">Dia selecionado</p>
+          <p className="text-[11px] uppercase text-gray-500">
+            {isMainView ? 'Visão diária' : 'Dia selecionado'}
+          </p>
           <p className="text-base sm:text-lg font-semibold text-gray-900">
             {formatSelectedDateLabel(selectedDate)}
           </p>
@@ -62,9 +70,13 @@ export default function AgendaSidebar({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 max-h-[52vh] md:max-h-none overflow-y-auto pr-1 pb-3 space-y-2.5">
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto pr-1 pb-3 space-y-2.5 ${
+          isMainView ? '' : 'max-h-[52vh] md:max-h-none'
+        }`}
+      >
         {selectedEvents.length === 0 ? (
-          <p className="text-sm text-gray-500">Nenhum evento para esta data.</p>
+          <p className="text-sm text-gray-500">{emptyMessage}</p>
         ) : filteredEvents.length === 0 ? (
           <p className="text-sm text-gray-500">Nenhum evento corresponde aos filtros.</p>
         ) : (
@@ -113,10 +125,11 @@ export default function AgendaSidebar({
           ))
         )}
       </div>
-      
 
       <div className="pt-3 border-t shrink-0">
-        <p className="text-[11px] uppercase text-gray-500 mb-2">Detalhes</p>
+        <p className="text-[11px] uppercase text-gray-500 mb-2">
+          {isMainView ? 'Detalhes do evento' : 'Detalhes'}
+        </p>
         {!selectedEvent ? (
           <p className="text-sm text-gray-500">Selecione um evento.</p>
         ) : (
@@ -194,7 +207,6 @@ export default function AgendaSidebar({
           </div>
         )}
       </div>
-
     </div>
   );
 }

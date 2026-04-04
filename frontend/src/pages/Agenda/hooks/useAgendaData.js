@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 
 import apiService from '../../../services/api';
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../../services/firebase';
+import { auth, db } from '../../../services/firebase';
 import {
   dateKey,
+  isEventRelatedToLoggedUser,
   parseDate,
   shouldShowSolicitacaoInAgenda,
 } from '../utils/agendaUtils';
@@ -14,6 +16,7 @@ const buildEmptyDay = () => ({ meetings: [], solicitacoesPendentes: [] });
 export default function useAgendaData() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()));
+  const [currentUser, setCurrentUser] = useState(() => auth.currentUser);
   const [meetings, setMeetings] = useState([]);
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +65,13 @@ export default function useAgendaData() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return unsubscribe;
+  }, []);
+
   const monthLabel = currentMonth.toLocaleDateString('pt-BR', {
     month: 'long',
     year: 'numeric',
@@ -82,6 +92,16 @@ export default function useAgendaData() {
     return days;
   }, [currentMonth]);
 
+  const relatedMeetings = useMemo(
+    () => meetings.filter((meeting) => isEventRelatedToLoggedUser(meeting, currentUser)),
+    [meetings, currentUser],
+  );
+
+  const relatedSolicitacoes = useMemo(
+    () => solicitacoes.filter((solicitacao) => isEventRelatedToLoggedUser(solicitacao, currentUser)),
+    [solicitacoes, currentUser],
+  );
+
   const eventsByDay = useMemo(() => {
     const map = {};
     const ensureDay = (key) => {
@@ -91,7 +111,7 @@ export default function useAgendaData() {
       return map[key];
     };
 
-    meetings.forEach((m) => {
+    relatedMeetings.forEach((m) => {
       const key = m.scheduledDate || (m.dateTime && dateKey(new Date(m.dateTime)));
       if (!key) return;
       const day = ensureDay(key);
@@ -111,7 +131,7 @@ export default function useAgendaData() {
       });
     });
 
-    solicitacoes.forEach((s) => {
+    relatedSolicitacoes.forEach((s) => {
       const key = s.createdAt ? dateKey(s.createdAt) : null;
       if (!key) return;
       if (!shouldShowSolicitacaoInAgenda(s.status)) return;
@@ -129,7 +149,7 @@ export default function useAgendaData() {
     });
 
     return map;
-  }, [meetings, solicitacoes]);
+  }, [relatedMeetings, relatedSolicitacoes]);
 
   const emptyDayEvents = buildEmptyDay();
   const selectedDayEvents = eventsByDay[selectedDate] || emptyDayEvents;
@@ -140,13 +160,13 @@ export default function useAgendaData() {
 
   const statusOptions = useMemo(() => {
     const set = new Set();
-    meetings.forEach((m) => m.status && set.add(m.status));
-    solicitacoes.forEach((s) => {
+    relatedMeetings.forEach((m) => m.status && set.add(m.status));
+    relatedSolicitacoes.forEach((s) => {
       if (!shouldShowSolicitacaoInAgenda(s.status)) return;
       if (s.status) set.add(s.status);
     });
     return ['all', ...Array.from(set)];
-  }, [meetings, solicitacoes]);
+  }, [relatedMeetings, relatedSolicitacoes]);
 
   const filteredEvents = useMemo(() => {
     return selectedEvents.filter((evt) => {
@@ -175,7 +195,7 @@ export default function useAgendaData() {
 
   const upcomingMeetings = useMemo(() => {
     const now = new Date();
-    return meetings
+    return relatedMeetings
       .map((m) => {
         const d = parseDate(m.dateTime) || parseDate(m.scheduledDate);
         return { ...m, _dateObj: d };
@@ -183,7 +203,7 @@ export default function useAgendaData() {
       .filter((m) => m._dateObj && m.status !== 'cancelada' && m._dateObj >= now)
       .sort((a, b) => a._dateObj - b._dateObj)
       .slice(0, 5);
-  }, [meetings]);
+  }, [relatedMeetings]);
 
   const changeMonth = (delta) => {
     const d = new Date(currentMonth);
@@ -196,6 +216,7 @@ export default function useAgendaData() {
   return {
     currentMonth,
     monthLabel,
+    currentUser,
     selectedDate,
     setCurrentMonth,
     selectDate,

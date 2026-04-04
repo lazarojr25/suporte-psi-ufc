@@ -1,6 +1,9 @@
 import { WEEK_DAYS } from '../utils/agendaUtils';
 
 export default function AgendaCalendar({
+  monthLabel,
+  currentMonthPrev,
+  currentMonthNext,
   calendarDays,
   currentMonth,
   selectedDate,
@@ -12,6 +15,24 @@ export default function AgendaCalendar({
 
   return (
     <div className="bg-white rounded-xl shadow p-3 sm:p-4 h-full flex flex-col">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <button
+          type="button"
+          onClick={currentMonthPrev}
+          className="px-3 py-2 rounded-md border text-sm text-gray-700 hover:bg-gray-50"
+        >
+          ← Mês anterior
+        </button>
+        <span className="text-sm font-semibold text-gray-800 text-center">{monthLabel}</span>
+        <button
+          type="button"
+          onClick={currentMonthNext}
+          className="px-3 py-2 rounded-md border text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Próximo mês →
+        </button>
+      </div>
+
       <div className="grid grid-cols-7 gap-1 text-xs font-semibold text-gray-600 mb-2">
         {WEEK_DAYS.map((d) => (
           <div key={d} className="text-center py-1">
