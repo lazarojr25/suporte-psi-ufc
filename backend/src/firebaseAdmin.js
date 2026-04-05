@@ -1,6 +1,7 @@
 import { initializeApp, applicationDefault, getApps, getApp } from 'firebase-admin/app';
 import { getAuth as firebaseGetAuth } from 'firebase-admin/auth';
 import { getFirestore as firebaseGetFirestore } from 'firebase-admin/firestore';
+import { getStorage as firebaseGetStorage } from 'firebase-admin/storage';
 
 const projectId =
   process.env.GOOGLE_CLOUD_PROJECT ||
@@ -25,4 +26,9 @@ export function getAdminAuth() {
 export function getAdminDb() {
   const app = initApp();
   return firebaseGetFirestore(app);
+}
+
+export function getAdminStorage() {
+  const app = initApp();
+  return firebaseGetStorage(app);
 }

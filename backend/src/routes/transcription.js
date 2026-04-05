@@ -11,7 +11,7 @@ import {
   logTranscriptionProcessingError,
 } from '../services/firestoreService.js';
 import {
-  buildTranscriptBaseName,
+  buildTranscriptFileName,
   enrichExtraInfoFromMeeting,
   ensureDir,
   isSafeFileName,
@@ -269,7 +269,7 @@ router.get('/by-discente/:discenteId', async (req, res) => {
 });
 
 // GET /api/transcription/:fileName
-router.get('/:fileName', (req, res) => {
+router.get('/:fileName', async (req, res) => {
   try {
     const { fileName } = req.params;
     if (!isSafeFileName(fileName)) {
@@ -277,7 +277,7 @@ router.get('/:fileName', (req, res) => {
         .status(400)
         .json({ success: false, message: 'fileName inválido.' });
     }
-    const transcription = transcriptionService.getTranscription(fileName);
+    const transcription = await transcriptionService.getTranscription(fileName);
     if (transcription) res.json({ success: true, data: transcription });
     else
       res
@@ -347,8 +347,7 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
     await enrichExtraInfoFromMeeting(db, meetingId, extraInfo, 'upload-text');
 
     const baseName = path.basename(req.file.originalname, path.extname(req.file.originalname));
-    const finalBaseName = buildTranscriptBaseName(extraInfo, toSafeBase(baseName));
-    const finalFileName = `${finalBaseName}.txt`;
+    const finalFileName = buildTranscriptFileName(extraInfo, toSafeBase(baseName), '.txt');
 
     const result = await transcriptionService.saveFinalTranscription(
       finalFileName,
@@ -405,6 +404,7 @@ router.post('/upload-text', uploadText.single('transcript'), async (req, res) =>
         const updatePayload = {
           status: 'concluida',
           updatedAt: new Date().toISOString(),
+          transcriptionId: finalFileName,
           transcriptionFileName: finalFileName,
         };
         if (extraInfo.discenteId) updatePayload.discenteId = extraInfo.discenteId;

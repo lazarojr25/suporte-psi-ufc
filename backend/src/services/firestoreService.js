@@ -255,6 +255,29 @@ export async function saveTranscriptionMetadata(data) {
   }
 }
 
+export async function getTranscriptionMetadataByFileName(fileName) {
+  const normalizedFileName = normalizeText(fileName);
+  if (!normalizedFileName) return null;
+  const safeId = normalizedFileName.replace(/[\/#?]+/g, '_');
+
+  try {
+    const doc = await db.collection(TRANSCRIPTION_METADATA_COLLECTION).doc(safeId).get();
+    if (doc.exists) return { id: doc.id, ...doc.data() };
+  } catch (error) {
+    console.warn('Falha ao buscar metadado de transcrição por ID seguro.', error?.message);
+  }
+
+  try {
+    const docs = await readTranscriptionMetadata((ref) =>
+      ref.where('fileName', '==', normalizedFileName).limit(1),
+    );
+    return docs[0] || null;
+  } catch (error) {
+    console.warn('Falha ao buscar metadado de transcrição por fileName.', error?.message);
+    return null;
+  }
+}
+
 /**
  * Busca metadados de transcrição por ID do discente.
  * @param {string} discenteId - O ID do discente.
@@ -265,19 +288,49 @@ export async function getTranscriptionsByDiscenteId(discenteId) {
   if (!normalizedDiscenteId) return [];
 
   try {
-    const queryBuilder = (ref) =>
-      ref.where('metadata.discenteId', '==', normalizedDiscenteId);
-    const docs = await readTranscriptionMetadata(queryBuilder);
-    if (docs.length > 0) {
-      return docs.filter(
-        (doc) => normalizeDiscenteId(doc?.metadata?.discenteId) === normalizedDiscenteId,
+    const dedupe = (docs = []) => {
+      const map = new Map();
+      docs.forEach((doc) => {
+        const key = doc?.fileName || doc?.id;
+        if (!key) return;
+        map.set(key, doc);
+      });
+      return Array.from(map.values());
+    };
+
+    let topLevelDocs = [];
+    try {
+      topLevelDocs = await readTranscriptionMetadata((ref) =>
+        ref.where('discenteId', '==', normalizedDiscenteId),
+      );
+    } catch (error) {
+      console.warn('Consulta por discenteId (top-level) indisponível:', error?.message);
+    }
+
+    let legacyDocs = [];
+    try {
+      legacyDocs = await readTranscriptionMetadata((ref) =>
+        ref.where('metadata.discenteId', '==', normalizedDiscenteId),
+      );
+    } catch (error) {
+      console.warn('Consulta legada por metadata.discenteId indisponível:', error?.message);
+    }
+
+    const merged = dedupe([...(topLevelDocs || []), ...(legacyDocs || [])]);
+    if (merged.length > 0) {
+      return merged.filter(
+        (doc) =>
+          normalizeDiscenteId(doc?.discenteId || doc?.metadata?.discenteId) ===
+          normalizedDiscenteId,
       );
     }
 
     // Fallback para casos legados com espaços/sufixos no ID (sem depender de índice composto).
     const allDocs = await readTranscriptionMetadata((ref) => ref);
     return allDocs.filter(
-      (doc) => normalizeDiscenteId(doc?.metadata?.discenteId) === normalizedDiscenteId,
+      (doc) =>
+        normalizeDiscenteId(doc?.discenteId || doc?.metadata?.discenteId) ===
+        normalizedDiscenteId,
     );
   } catch (error) {
     console.error('ERRO ao buscar metadados no Firestore.', error);

@@ -11,6 +11,9 @@ export default function MeetingDetalheTranscricao({
   txtUploading,
   txtMsg,
   txtErr,
+  transcriptionFileName,
+  transcriptionContent,
+  transcriptionFetchErr,
   isConcluida,
   containerClassName = '',
 }) {
@@ -69,6 +72,27 @@ export default function MeetingDetalheTranscricao({
       </div>
       {isConcluida && (
         <p className="text-[11px] text-gray-500">Esta sessão está marcada como concluída.</p>
+      )}
+
+      {(transcriptionFileName || transcriptionFetchErr) && (
+        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] text-gray-600 uppercase">Transcrição salva</p>
+            {transcriptionFileName && (
+              <span className="text-[11px] text-gray-500 truncate">{transcriptionFileName}</span>
+            )}
+          </div>
+          {transcriptionFetchErr ? (
+            <p className="text-xs text-red-600">{transcriptionFetchErr}</p>
+          ) : (
+            <textarea
+              value={transcriptionContent || ''}
+              readOnly
+              rows={8}
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800"
+            />
+          )}
+        </div>
       )}
     </div>
   );

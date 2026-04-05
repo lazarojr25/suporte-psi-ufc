@@ -79,6 +79,28 @@ export const buildTranscriptBaseName = (extraInfo, fallbackBaseName) => {
   return base || fallbackBaseName || 'transcricao';
 };
 
+export const buildTranscriptFileName = (
+  extraInfo,
+  fallbackBaseName = 'transcricao',
+  ext = '.txt',
+) => {
+  const base = buildTranscriptBaseName(extraInfo, fallbackBaseName);
+  const meetingSuffix = (extraInfo?.meetingId || '')
+    .toString()
+    .replace(/[^a-zA-Z0-9]+/g, '')
+    .slice(-8);
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:T.Z]/g, '')
+    .slice(0, 14);
+  const randomSuffix = Math.random().toString(36).slice(2, 7);
+
+  const parts = [base, timestamp, randomSuffix];
+  if (meetingSuffix) parts.splice(1, 0, meetingSuffix);
+
+  return `${parts.filter(Boolean).join('_')}${ext.startsWith('.') ? ext : `.${ext}`}`;
+};
+
 export const enrichExtraInfoFromMeeting = async (
   db,
   meetingId,

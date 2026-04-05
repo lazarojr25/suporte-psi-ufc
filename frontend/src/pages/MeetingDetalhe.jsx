@@ -41,6 +41,9 @@ export default function MeetingDetalhe() {
     notesSaveMsg,
     notesSaveErr,
     transcriptionAnalysis,
+    transcriptionContent,
+    transcriptionFileName,
+    transcriptionFetchErr,
     transcriptionReview,
     setReviewField,
     setReviewChecklistItem,
@@ -211,6 +214,9 @@ export default function MeetingDetalhe() {
           txtUploading={txtUploading}
           txtMsg={txtMsg}
           txtErr={txtErr}
+          transcriptionFileName={transcriptionFileName}
+          transcriptionContent={transcriptionContent}
+          transcriptionFetchErr={transcriptionFetchErr}
           isConcluida={meeting?.status === 'concluida'}
           containerClassName="bg-transparent rounded-none shadow-none p-0"
         />
