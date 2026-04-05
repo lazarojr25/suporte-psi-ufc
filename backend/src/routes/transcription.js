@@ -1,11 +1,15 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 import TranscriptionService from '../services/transcriptionService.js';
 import { getAdminDb } from '../firebaseAdmin.js';
 import TranscriptionMediaJobService from '../services/transcription/transcriptionMediaJobService.js';
+import {
+  getUploadsDir,
+  getWorkDir,
+  isServerlessRuntime,
+} from '../config/runtimePaths.js';
 import {
   listTranscriptionProcessingErrors,
   logTranscriptionProcessingError,
@@ -20,15 +24,21 @@ import {
 } from '../services/transcription/transcriptionHelpers.js';
 import { extractTranscriptTextFromUpload } from '../services/transcription/transcriptTextExtractor.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const router = express.Router();
 const transcriptionService = new TranscriptionService();
+const uploadsDir = getUploadsDir();
+const transcriptionWorkDir = getWorkDir();
+const mediaUploadLimitBytes = isServerlessRuntime
+  ? 30 * 1024 * 1024
+  : 500 * 1024 * 1024;
+
+ensureDir(uploadsDir);
+ensureDir(transcriptionWorkDir);
+
 const transcriptionMediaJobService = new TranscriptionMediaJobService(
   transcriptionService,
   {
-    workDirectory: path.join(__dirname, '../..'),
+    workDirectory: transcriptionWorkDir,
   },
 );
 
@@ -73,9 +83,7 @@ const logProcessingError = async (payload, error) => {
 // -------------------- multer (upload) ----------------
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../uploads');
-    ensureDir(uploadDir);
-    cb(null, uploadDir);
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -85,7 +93,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
+  limits: { fileSize: mediaUploadLimitBytes },
   fileFilter: function (req, file, cb) {
     const audioExts = ['.mp3', '.wav', '.m4a', '.ogg'];
     const videoExts = ['.mp4', '.mov', '.webm', '.mkv', '.avi'];
@@ -104,9 +112,7 @@ const upload = multer({
 
 const textStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../uploads');
-    ensureDir(uploadDir);
-    cb(null, uploadDir);
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -166,6 +172,35 @@ router.post('/upload', upload.single('audio'), async (req, res) => {
     };
 
     await enrichExtraInfoFromMeeting(db, meetingId, extraInfo, 'upload');
+
+    if (isServerlessRuntime) {
+      const execution = await transcriptionMediaJobService.runNowWithRetry(
+        {
+          filePath: req.file.path,
+          fileName: req.file.filename,
+          extraInfo,
+        },
+        { updateMeetingSafe },
+      );
+
+      if (!execution.result.success) {
+        return res.status(500).json({
+          success: false,
+          processing: false,
+          jobId: execution.jobId,
+          message:
+            execution.result.message || 'Erro no processamento de mídia',
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        processing: false,
+        jobId: execution.jobId,
+        message: 'Arquivo processado com sucesso.',
+        data: execution.result.data || null,
+      });
+    }
 
     const jobId = transcriptionMediaJobService.startAsyncTranscriptionJob(
       {
@@ -524,6 +559,17 @@ router.post('/reprocess-all', async (req, res) => {
       error: error.message,
     });
   }
+});
+
+router.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+    const maxMb = Math.floor(mediaUploadLimitBytes / (1024 * 1024));
+    return res.status(413).json({
+      success: false,
+      message: `Arquivo excede o limite de ${maxMb}MB para este ambiente.`,
+    });
+  }
+  return next(error);
 });
 
 export default router;

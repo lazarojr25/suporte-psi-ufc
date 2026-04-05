@@ -1,0 +1,47 @@
+{
+  "functions": {
+    "source": "backend",
+    "runtime": "nodejs20",
+    "ignore": [
+      "node_modules",
+      ".git",
+      ".github",
+      "*.log",
+      ".env*",
+      "uploads",
+      "work"
+    ]
+  },
+  "hosting": {
+    "public": "frontend/dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "function": {
+          "functionId": "api",
+          "region": "southamerica-east1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      }
+    ]
+  }
+}

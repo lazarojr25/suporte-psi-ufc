@@ -1,6 +1,6 @@
 import { auth } from './firebase';
-// Serviço para comunicação com o backend Node.js
-const API_BASE_URL = 'http://localhost:5001/api';
+// Serviço para comunicação com o backend
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
 
 class ApiService {
   constructor() {
