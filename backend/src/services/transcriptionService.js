@@ -17,10 +17,17 @@ class TranscriptionService {
   constructor() {
     this.storage = new TranscriptionStorage();
     this.metadataRepository = new TranscriptionMetadataRepository();
+    this.modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+    this.aiClient = null;
+  }
 
-    this.aiClient = new TranscriptionAiClient({
-      modelName: process.env.GEMINI_MODEL || DEFAULT_MODEL,
-    });
+  _getAiClient() {
+    if (!this.aiClient) {
+      this.aiClient = new TranscriptionAiClient({
+        modelName: this.modelName,
+      });
+    }
+    return this.aiClient;
   }
 
   _normalizeAnalysis(analysis = null, fallbackError = null) {
@@ -28,7 +35,7 @@ class TranscriptionService {
       return fallbackError
         ? {
             schemaVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
-            model: this.aiClient.modelName,
+            model: this.modelName,
             summary: `Falha ao gerar análise automática: ${fallbackError}`,
             sentiments: {
               positive: 0,
@@ -51,7 +58,7 @@ class TranscriptionService {
 
     return {
       schemaVersion: analysis.schemaVersion || TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
-      model: analysis.model || this.aiClient.modelName,
+      model: analysis.model || this.modelName,
       summary: analysis.summary || '',
       sentiments: analysis.sentiments || { positive: 0, neutral: 0, negative: 0 },
       summaryConfidence:
@@ -95,7 +102,8 @@ class TranscriptionService {
     let analysisError = null;
 
     try {
-      transcriptionText = await this.aiClient.transcribeAudio(audioPath);
+      const aiClient = this._getAiClient();
+      transcriptionText = await aiClient.transcribeAudio(audioPath);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para transcrição:', error);
       analysisStatus = ANALYSIS_STATUS.FAILED;
@@ -133,7 +141,8 @@ class TranscriptionService {
     }
 
     try {
-      analysis = await this.aiClient.analyzeText(transcriptionText);
+      const aiClient = this._getAiClient();
+      analysis = await aiClient.analyzeText(transcriptionText);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
       analysisStatus = ANALYSIS_STATUS.FAILED;
@@ -158,7 +167,7 @@ class TranscriptionService {
       analysisStatus,
       analysisError,
       {
-        model: this.aiClient.modelName,
+        model: this.modelName,
         promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
       },
       storageInfo,
@@ -182,7 +191,8 @@ class TranscriptionService {
     let analysisError = null;
 
     try {
-      analysis = await this.aiClient.analyzeText(mergedText);
+      const aiClient = this._getAiClient();
+      analysis = await aiClient.analyzeText(mergedText);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
       analysisStatus = ANALYSIS_STATUS.FAILED;
@@ -205,7 +215,7 @@ class TranscriptionService {
       analysisStatus,
       analysisError,
       {
-        model: this.aiClient.modelName,
+        model: this.modelName,
         promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
       },
       storageInfo,
@@ -224,7 +234,8 @@ class TranscriptionService {
   }
 
   async analyzeTranscription(text) {
-    return this._normalizeAnalysis(await this.aiClient.analyzeText(text));
+    const aiClient = this._getAiClient();
+    return this._normalizeAnalysis(await aiClient.analyzeText(text));
   }
 
   async listTranscriptionsWithMetadata(filters = {}) {
@@ -275,7 +286,8 @@ class TranscriptionService {
     let analysisError = null;
 
     try {
-      analysis = await this.aiClient.analyzeText(content);
+      const aiClient = this._getAiClient();
+      analysis = await aiClient.analyzeText(content);
     } catch (error) {
       console.error('Erro ao chamar a API do Gemini para análise:', error);
       analysisStatus = ANALYSIS_STATUS.FAILED;
@@ -318,7 +330,7 @@ class TranscriptionService {
       analysisStatus,
       analysisError,
       {
-        model: this.aiClient.modelName,
+        model: this.modelName,
         promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
       },
       storageInfo,

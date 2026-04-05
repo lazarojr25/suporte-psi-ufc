@@ -92,6 +92,43 @@ jobs:
         run: npm ci
         working-directory: backend
 
+      - name: Generate backend env for deploy
+        env:
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+          GOOGLE_CALENDAR_TIMEZONE: ${{ vars.GOOGLE_CALENDAR_TIMEZONE }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GMAIL_REDIRECT_URI: ${{ vars.GMAIL_REDIRECT_URI }}
+          GMAIL_OAUTH_SCOPES: ${{ vars.GMAIL_OAUTH_SCOPES }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GOOGLE_AI_API_KEY:-}" ]]; then
+            echo "::warning::Secret GOOGLE_AI_API_KEY ausente. Rotas de transcrição/análise podem falhar."
+          fi
+          if [[ -z "${FIREBASE_STORAGE_BUCKET:-}" ]]; then
+            echo "::warning::Secret FIREBASE_STORAGE_BUCKET ausente. Persistência de transcrições no Storage pode falhar."
+          fi
+
+          {
+            echo "NODE_ENV=production"
+            echo "FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}"
+            [[ -n "${GOOGLE_AI_API_KEY:-}" ]] && echo "GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}"
+            [[ -n "${FIREBASE_STORAGE_BUCKET:-}" ]] && echo "FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}"
+            [[ -n "${GEMINI_MODEL:-}" ]] && echo "GEMINI_MODEL=${GEMINI_MODEL}"
+            [[ -n "${GOOGLE_CALENDAR_ID:-}" ]] && echo "GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID}"
+            [[ -n "${GOOGLE_CALENDAR_TIMEZONE:-}" ]] && echo "GOOGLE_CALENDAR_TIMEZONE=${GOOGLE_CALENDAR_TIMEZONE}"
+            [[ -n "${GMAIL_CLIENT_ID:-}" ]] && echo "GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID}"
+            [[ -n "${GMAIL_CLIENT_SECRET:-}" ]] && echo "GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET}"
+            [[ -n "${GMAIL_REFRESH_TOKEN:-}" ]] && echo "GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN}"
+            [[ -n "${GMAIL_REDIRECT_URI:-}" ]] && echo "GMAIL_REDIRECT_URI=${GMAIL_REDIRECT_URI}"
+            [[ -n "${GMAIL_OAUTH_SCOPES:-}" ]] && echo "GMAIL_OAUTH_SCOPES=${GMAIL_OAUTH_SCOPES}"
+          } > backend/.env
+
       - name: Lint frontend (if configured)
         run: |
           if ls .eslintrc* eslint.config.* >/dev/null 2>&1; then
