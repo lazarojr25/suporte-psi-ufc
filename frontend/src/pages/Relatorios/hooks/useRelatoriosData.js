@@ -26,6 +26,15 @@ export default function useRelatoriosData({ from = null, to = null } = {}) {
   const [topCourseTrend, setTopCourseTrend] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [narratives, setNarratives] = useState(null);
+  const [attendanceHoursByUser, setAttendanceHoursByUser] = useState({
+    users: [],
+    totals: {
+      scheduledHours: 0,
+      completedHours: 0,
+      scheduledSessions: 0,
+      completedSessions: 0,
+    },
+  });
 
   const toIso = useCallback((value) => {
     if (!value) return null;
@@ -59,6 +68,17 @@ export default function useRelatoriosData({ from = null, to = null } = {}) {
           setTopCourseTrend(res.topCourseTrend || null);
           setAlerts(res.alerts || []);
           setNarratives(res.narratives || null);
+          setAttendanceHoursByUser(
+            res.attendanceHoursByUser || {
+              users: [],
+              totals: {
+                scheduledHours: 0,
+                completedHours: 0,
+                scheduledSessions: 0,
+                completedSessions: 0,
+              },
+            },
+          );
         } else {
           setError('Falha ao carregar relatórios.');
         }
@@ -171,5 +191,6 @@ export default function useRelatoriosData({ from = null, to = null } = {}) {
     narratives,
     sentimentsTimeline,
     handleRefreshNow,
+    attendanceHoursByUser,
   };
 }

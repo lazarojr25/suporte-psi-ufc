@@ -1,14 +1,17 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import useAgendaData from './Agenda/hooks/useAgendaData';
 import AgendaHeader from './Agenda/components/AgendaHeader';
 import AgendaCalendar from './Agenda/components/AgendaCalendar';
 import AgendaSidebar from './Agenda/components/AgendaSidebar';
+import AgendaScheduleModal from './Agenda/components/AgendaScheduleModal';
+import { isDateOnOrAfterToday } from './Agenda/utils/agendaUtils';
 
 export default function Agenda() {
   const navigate = useNavigate();
   const dailyPanelRef = useRef(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
   const {
     monthLabel,
@@ -30,7 +33,12 @@ export default function Agenda() {
     setStatusFilter,
     selectDate,
     setSelectedEvent,
+    discentes,
+    pendingSolicitacoes,
+    createMeetingFromAgenda,
   } = useAgendaData();
+
+  const canScheduleSelectedDate = isDateOnOrAfterToday(selectedDate);
 
   const handleSelectDate = (dateKey, hasEvents) => {
     selectDate(dateKey);
@@ -44,6 +52,26 @@ export default function Agenda() {
         dailyPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 80);
     }
+  };
+
+  const handleScheduleFromAgenda = async (payload) => {
+    const response = await createMeetingFromAgenda(payload);
+    if (response?.calendar?.success === false) {
+      alert(
+        response?.calendar?.message
+          ? `Sessão agendada, mas não foi possível criar o evento no Google Calendar: ${response.calendar.message}`
+          : 'Sessão agendada, mas não foi possível criar o evento no Google Calendar.',
+      );
+    }
+    return response;
+  };
+
+  const handleOpenScheduleModal = (targetDate = selectedDate) => {
+    if (!isDateOnOrAfterToday(targetDate)) return;
+    if (targetDate && targetDate !== selectedDate) {
+      selectDate(targetDate);
+    }
+    setScheduleModalOpen(true);
   };
 
   return (
@@ -67,6 +95,8 @@ export default function Agenda() {
             eventsByDay={eventsByDay}
             emptyDayEvents={{ meetings: [], solicitacoesPendentes: [] }}
             onSelectDate={handleSelectDate}
+            canScheduleSelectedDate={canScheduleSelectedDate}
+            onOpenScheduleModal={handleOpenScheduleModal}
           />
         </div>
 
@@ -89,6 +119,15 @@ export default function Agenda() {
           />
         </div>
       </div>
+
+      <AgendaScheduleModal
+        open={scheduleModalOpen}
+        selectedDate={selectedDate}
+        discentes={discentes}
+        pendingSolicitacoes={pendingSolicitacoes}
+        onClose={() => setScheduleModalOpen(false)}
+        onSchedule={handleScheduleFromAgenda}
+      />
     </div>
   );
 }

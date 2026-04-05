@@ -66,6 +66,7 @@ export default function Relatorios() {
     narratives,
     cache,
     timeWindows,
+    attendanceHoursByUser,
   } = useRelatoriosData({
     from: periodRange.from,
     to: periodRange.to,
@@ -185,6 +186,44 @@ export default function Relatorios() {
               qualityFlags={qualityFlags}
               riskSignals={riskSignals}
             />
+
+            <section className="bg-white rounded-xl shadow p-4">
+              <p className="text-sm font-semibold mb-2">Horas de atendimento por usuário</p>
+              {!attendanceHoursByUser?.users?.length ? (
+                <p className="text-sm text-gray-500">Nenhum dado de horas por usuário no período.</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-gray-500 border-b">
+                          <th className="py-2 pr-2">Usuário</th>
+                          <th className="py-2 pr-2">Agendadas (h)</th>
+                          <th className="py-2 pr-2">Concluídas (h)</th>
+                          <th className="py-2 pr-2">Sessões agendadas</th>
+                          <th className="py-2">Sessões concluídas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attendanceHoursByUser.users.map((entry) => (
+                          <tr key={entry.key} className="border-b border-gray-100">
+                            <td className="py-2 pr-2 text-gray-800">{entry.label}</td>
+                            <td className="py-2 pr-2">{entry.scheduledHours || 0}</td>
+                            <td className="py-2 pr-2">{entry.completedHours || 0}</td>
+                            <td className="py-2 pr-2">{entry.scheduledSessions || 0}</td>
+                            <td className="py-2">{entry.completedSessions || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    Total: {attendanceHoursByUser.totals?.scheduledHours || 0}h agendadas e{' '}
+                    {attendanceHoursByUser.totals?.completedHours || 0}h concluídas.
+                  </p>
+                </div>
+              )}
+            </section>
 
             {!!timeWindows && (
               <section className="bg-white rounded-xl shadow p-4">

@@ -142,6 +142,11 @@ export default function AgendaSidebar({
             {selectedEvent.studentName && (
               <p className="text-[11px] text-gray-500">Discente: {selectedEvent.studentName}</p>
             )}
+            {selectedEvent.raw?.sessionType === 'grupo' && (
+              <p className="text-[11px] text-gray-500">
+                Integrantes: {selectedEvent.raw?.groupSize || selectedEvent.raw?.participants?.length || 0}
+              </p>
+            )}
             {selectedEvent.curso && (
               <p className="text-[11px] text-gray-500">Curso: {selectedEvent.curso}</p>
             )}

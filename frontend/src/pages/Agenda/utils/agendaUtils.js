@@ -1,6 +1,19 @@
 export const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-export const dateKey = (date) => date.toISOString().slice(0, 10);
+export const dateKey = (date) => {
+  if (!(date instanceof Date)) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const todayDateKey = () => dateKey(new Date());
+
+export const isDateOnOrAfterToday = (date) => {
+  if (!date || typeof date !== 'string') return false;
+  return date >= todayDateKey();
+};
 
 export const parseDate = (value) => {
   if (!value) return null;
@@ -106,6 +119,13 @@ export const shouldShowSolicitacaoInAgenda = (status) => {
 
 export const formatSelectedDateLabel = (selectedDate) =>
   selectedDate.split('-').reverse().join('/');
+
+export const getMeetingTitle = (meeting = {}) => {
+  if (meeting.sessionType === 'grupo') {
+    return meeting.groupTheme || meeting.title || 'Sessão em grupo';
+  }
+  return meeting.studentName || meeting.title || 'Sessão';
+};
 
 export const isSolicitacaoComEncontroAgendado = (status) => {
   return normalizeStatus(status).includes('encontro agendado');

@@ -30,6 +30,27 @@ function overlaps(candidateStart, candidateDur, existingStart, existingDur) {
 
 const MEETINGS_COLLECTION = 'encontros';
 const LEGACY_MEETINGS_COLLECTIONS = ['meetings'];
+const DEFAULT_DURATION_MINUTES = 45;
+const GROUP_SESSION_MAX_MEMBERS = 15;
+const APP_TIME_ZONE = process.env.GOOGLE_CALENDAR_TIMEZONE || 'America/Fortaleza';
+
+const normalizeStatus = (status) =>
+  (status || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const normalizeEmail = (email) => {
+  const safe = (email || '').toString().trim().toLowerCase();
+  return safe || null;
+};
+
+const sanitizeText = (value) => {
+  const safe = (value || '').toString().trim();
+  return safe || null;
+};
 
 class MeetingsService {
   constructor(db) {
@@ -46,6 +67,80 @@ class MeetingsService {
 
   _meetingCollections() {
     return [MEETINGS_COLLECTION, ...LEGACY_MEETINGS_COLLECTIONS];
+  }
+
+  _todayKey() {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: APP_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = formatter.formatToParts(new Date());
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    return year && month && day ? `${year}-${month}-${day}` : new Date().toISOString().slice(0, 10);
+  }
+
+  _isValidDateKey(date) {
+    return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  }
+
+  _normalizeSessionType(value) {
+    const raw = (value || '').toString().trim().toLowerCase();
+    return raw === 'grupo' ? 'grupo' : 'individual';
+  }
+
+  _normalizeParticipants(participants = [], fallbackData = {}) {
+    if (!Array.isArray(participants)) return [];
+    return participants
+      .map((participant) => {
+        if (!participant || typeof participant !== 'object') return null;
+        const participantDiscenteId = sanitizeText(participant.discenteId || participant.id);
+        const participantName = sanitizeText(participant.name || participant.studentName);
+        const participantEmail = normalizeEmail(participant.email || participant.studentEmail);
+        const participantStudentId = sanitizeText(participant.studentId || participant.matricula);
+        const participantCourse = sanitizeText(participant.curso || participant.course || fallbackData.curso);
+        if (!participantDiscenteId && !participantName && !participantEmail) return null;
+        return {
+          discenteId: participantDiscenteId,
+          name: participantName,
+          email: participantEmail,
+          studentId: participantStudentId,
+          curso: participantCourse,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  _extractAttendeeEmails({ studentEmail, participants }) {
+    const emails = [normalizeEmail(studentEmail)];
+    if (Array.isArray(participants)) {
+      participants.forEach((participant) => {
+        emails.push(normalizeEmail(participant?.email));
+      });
+    }
+    return Array.from(new Set(emails.filter(Boolean)));
+  }
+
+  _buildOwnerInfo(payloadOwner = {}, currentUser = null) {
+    const ownerUid = sanitizeText(currentUser?.uid || payloadOwner.ownerUid || payloadOwner.uid);
+    const ownerEmail = normalizeEmail(currentUser?.email || payloadOwner.ownerEmail || payloadOwner.email);
+    const ownerRole = sanitizeText(currentUser?.role || payloadOwner.role);
+    const ownerName = sanitizeText(payloadOwner.name);
+    return {
+      ownerUid,
+      ownerEmail,
+      ownerRole,
+      ownerName,
+      owner: {
+        uid: ownerUid,
+        email: ownerEmail,
+        role: ownerRole,
+        name: ownerName,
+      },
+    };
   }
 
   async _collectMeetings(buildQuery) {
@@ -89,6 +184,7 @@ class MeetingsService {
   }
 
   async _meetingForSolicitacaoExists(solicitacaoId) {
+    if (!solicitacaoId) return false;
     const query = await this._collectMeetings((ref) =>
       ref.where('solicitacaoId', '==', solicitacaoId),
     );
@@ -126,75 +222,171 @@ class MeetingsService {
       studentEmail,
       scheduledDate,
       scheduledTime,
-      duration = 45,
+      duration = DEFAULT_DURATION_MINUTES,
       notes,
       discenteId,
       curso,
+      sessionType: incomingSessionType,
+      groupTheme,
+      participants: incomingParticipants,
     } = payload;
 
-    if (
-      !solicitacaoId ||
-      !studentName ||
-      !studentEmail ||
-      !scheduledDate ||
-      !scheduledTime
-    ) {
+    const sessionType = this._normalizeSessionType(incomingSessionType);
+    const todayKey = this._todayKey();
+    const parsedDuration = Number(duration) || DEFAULT_DURATION_MINUTES;
+
+    if (!scheduledDate || !scheduledTime) {
       return {
         success: false,
         statusCode: 400,
-        message:
-          'Dados obrigatórios: solicitacaoId, studentName, studentEmail, scheduledDate, scheduledTime',
+        message: 'Dados obrigatórios: scheduledDate e scheduledTime.',
       };
     }
 
-    const solicitacaoRef = this.db
-      .collection('solicitacoesAtendimento')
-      .doc(solicitacaoId);
-    const solicitacaoSnap = await solicitacaoRef.get();
-    if (solicitacaoSnap.exists) {
-      const statusRaw = (solicitacaoSnap.data()?.status || '')
-        .toString()
-        .toLowerCase();
-      if (statusRaw.includes('encontro agendado')) {
+    if (!this._isValidDateKey(scheduledDate)) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: 'Formato de data inválido. Use YYYY-MM-DD.',
+      };
+    }
+
+    if (scheduledDate < todayKey) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: `Só é permitido agendar para hoje (${todayKey}) ou datas futuras.`,
+      };
+    }
+
+    const fallbackParticipant = {
+      discenteId: discenteId || null,
+      name: studentName || null,
+      email: studentEmail || null,
+      curso: curso || null,
+    };
+    const participants = this._normalizeParticipants(incomingParticipants, fallbackParticipant);
+
+    const safeGroupTheme = sanitizeText(groupTheme);
+    const safeDiscenteId = sanitizeText(discenteId);
+    const safeCourse = sanitizeText(curso);
+
+    let safeStudentName = sanitizeText(studentName);
+    let safeStudentEmail = normalizeEmail(studentEmail);
+
+    if (sessionType === 'grupo') {
+      if (!safeGroupTheme) {
         return {
           success: false,
-          statusCode: 409,
-          message: 'Esta solicitação já possui um encontro agendado.',
+          statusCode: 400,
+          message: 'Sessões em grupo exigem um tema.',
         };
+      }
+
+      if (participants.length === 0) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: 'Sessões em grupo exigem ao menos um integrante.',
+        };
+      }
+
+      if (participants.length > GROUP_SESSION_MAX_MEMBERS) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: `Sessões em grupo permitem no máximo ${GROUP_SESSION_MAX_MEMBERS} integrantes.`,
+        };
+      }
+
+      safeStudentName = safeGroupTheme;
+      safeStudentEmail = safeStudentEmail || participants.find((p) => p.email)?.email || null;
+    } else {
+      if (!safeStudentName) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: 'Sessões individuais exigem studentName.',
+        };
+      }
+
+      if (!participants.length && (safeDiscenteId || safeStudentName || safeStudentEmail)) {
+        participants.push({
+          discenteId: safeDiscenteId,
+          name: safeStudentName,
+          email: safeStudentEmail,
+          studentId: sanitizeText(payload.studentId),
+          curso: safeCourse,
+        });
       }
     }
 
-    const existingMeeting = await this._meetingForSolicitacaoExists(solicitacaoId);
-    if (existingMeeting) {
-      return {
-        success: false,
-        statusCode: 409,
-        message: 'Já existe uma reunião agendada para esta solicitação',
-      };
+    const safeSolicitacaoId = sanitizeText(solicitacaoId);
+    let solicitacaoRef = null;
+
+    if (safeSolicitacaoId) {
+      solicitacaoRef = this.db.collection('solicitacoesAtendimento').doc(safeSolicitacaoId);
+      const solicitacaoSnap = await solicitacaoRef.get();
+      if (solicitacaoSnap.exists) {
+        const statusRaw = normalizeStatus(solicitacaoSnap.data()?.status);
+        if (statusRaw.includes('encontro agendado')) {
+          return {
+            success: false,
+            statusCode: 409,
+            message: 'Esta solicitação já possui um encontro agendado.',
+          };
+        }
+      }
+
+      const existingMeeting = await this._meetingForSolicitacaoExists(safeSolicitacaoId);
+      if (existingMeeting) {
+        return {
+          success: false,
+          statusCode: 409,
+          message: 'Já existe uma reunião agendada para esta solicitação',
+        };
+      }
     }
 
     const nowIso = new Date().toISOString();
     const dateObj = toDateTime(scheduledDate, scheduledTime);
     const dateTimeIso = dateObj ? dateObj.toISOString() : null;
-    const ownerUid = currentUser?.uid || payload.ownerUid || null;
-    const ownerEmailRaw = currentUser?.email || payload.ownerEmail || null;
-    const ownerEmail = ownerEmailRaw ? ownerEmailRaw.toString().trim().toLowerCase() : null;
+    const {
+      ownerUid,
+      ownerEmail,
+      ownerRole,
+      ownerName,
+      owner,
+    } = this._buildOwnerInfo(payload.owner || payload, currentUser);
+
+    const safeTitle =
+      sessionType === 'grupo'
+        ? safeGroupTheme
+        : safeStudentName || 'Sessão';
 
     const newMeeting = {
-      solicitacaoId,
-      studentName,
-      studentEmail,
-      discenteId: discenteId || null,
-      curso: curso || null,
+      solicitacaoId: safeSolicitacaoId || null,
+      studentName: safeStudentName,
+      studentEmail: safeStudentEmail,
+      title: safeTitle,
+      sessionType,
+      groupTheme: sessionType === 'grupo' ? safeGroupTheme : null,
+      participants,
+      groupSize: participants.length || (sessionType === 'grupo' ? 1 : 0),
+      discenteId: safeDiscenteId || null,
+      curso: safeCourse || null,
       scheduledDate,
       scheduledTime,
-      duration,
+      duration: parsedDuration,
       notes: notes || '',
       status: 'agendada',
       createdAt: nowIso,
       dateTime: dateTimeIso,
       ownerUid,
       ownerEmail,
+      ownerRole: ownerRole || null,
+      ownerName: ownerName || null,
+      owner,
       createdByUid: ownerUid,
       createdByEmail: ownerEmail,
       meetLink: null,
@@ -207,13 +399,21 @@ class MeetingsService {
 
     const calendarStatus = { success: true, message: null };
     try {
+      const attendeeEmails = this._extractAttendeeEmails({
+        studentEmail: safeStudentEmail,
+        participants,
+      });
       const meetResp = await createMeetEvent({
-        summary: `Atendimento - ${studentName}`,
+        summary:
+          sessionType === 'grupo'
+            ? `Sessão em grupo - ${safeGroupTheme}`
+            : `Atendimento - ${safeStudentName}`,
         description: notes || '',
         date: scheduledDate,
         time: scheduledTime,
-        durationMinutes: duration,
-        attendeeEmail: studentEmail,
+        durationMinutes: parsedDuration,
+        attendeeEmail: safeStudentEmail,
+        attendeeEmails,
       });
 
       if (meetResp?.success && (meetResp.meetLink || meetResp.eventId)) {
@@ -237,22 +437,60 @@ class MeetingsService {
     }
 
     try {
-      if (studentEmail && newMeeting.meetLink) {
-        const text = `Olá ${studentName || ''},
+      if (newMeeting.meetLink) {
+        if (sessionType !== 'grupo' && safeStudentEmail) {
+          const text = `Olá ${safeStudentName || ''},
 
 Sua sessão está agendada para ${scheduledDate} às ${scheduledTime}.
 Link para o encontro: ${newMeeting.meetLink}
 
 Se não foi você, ignore esta mensagem.`;
-        await sendMeetingEmail({
-          to: studentEmail,
-          subject: 'Sessão agendada - link do encontro',
-          text,
-          html: `<p>Olá ${studentName || ''},</p>
+          await sendMeetingEmail({
+            to: safeStudentEmail,
+            subject: 'Sessão agendada - link do encontro',
+            text,
+            html: `<p>Olá ${safeStudentName || ''},</p>
 <p>Sua sessão está agendada para <strong>${scheduledDate}</strong> às <strong>${scheduledTime}</strong>.</p>
 <p>Link para o encontro: <a href="${newMeeting.meetLink}">${newMeeting.meetLink}</a></p>
 <p>Se não foi você, ignore esta mensagem.</p>`,
-        });
+          });
+        }
+
+        if (sessionType === 'grupo') {
+          const groupEmails = this._extractAttendeeEmails({
+            studentEmail: safeStudentEmail,
+            participants,
+          });
+          const subject = `Sessão em grupo agendada - ${safeGroupTheme}`;
+          const text = `Olá,
+
+Uma sessão em grupo foi agendada para ${scheduledDate} às ${scheduledTime}.
+Tema: ${safeGroupTheme}
+Link para o encontro: ${newMeeting.meetLink}
+
+Se não foi você, ignore esta mensagem.`;
+          const html = `<p>Olá,</p>
+<p>Uma sessão em grupo foi agendada para <strong>${scheduledDate}</strong> às <strong>${scheduledTime}</strong>.</p>
+<p><strong>Tema:</strong> ${safeGroupTheme}</p>
+<p>Link para o encontro: <a href="${newMeeting.meetLink}">${newMeeting.meetLink}</a></p>
+<p>Se não foi você, ignore esta mensagem.</p>`;
+
+          for (const email of groupEmails) {
+            try {
+              const sendResp = await sendMeetingEmail({
+                to: email,
+                subject,
+                text,
+                html,
+              });
+              if (!sendResp?.success) {
+                console.warn('Falha ao enviar e-mail para integrante da sessão em grupo:', email, sendResp?.message);
+              }
+            } catch (groupMailErr) {
+              console.warn('Falha ao enviar e-mail para integrante da sessão em grupo:', email, groupMailErr?.message);
+            }
+          }
+        }
       }
     } catch (mailErr) {
       console.warn('Falha ao enviar e-mail do encontro:', mailErr?.message);
@@ -261,10 +499,12 @@ Se não foi você, ignore esta mensagem.`;
     const saved = { id: docRef.id, ...newMeeting };
 
     try {
-      await solicitacaoRef.set(
-        { status: 'encontro agendado', updatedAt: nowIso },
-        { merge: true },
-      );
+      if (solicitacaoRef) {
+        await solicitacaoRef.set(
+          { status: 'encontro agendado', updatedAt: nowIso },
+          { merge: true },
+        );
+      }
     } catch (sErr) {
       console.warn(
         'Falha ao atualizar status da solicitação após criar encontro:',
@@ -284,7 +524,24 @@ Se não foi você, ignore esta mensagem.`;
   async getAvailableSlots(date) {
     this._requireDb();
 
-    const slotDuration = 45;
+    if (!this._isValidDateKey(date)) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: 'Formato de data inválido. Use YYYY-MM-DD.',
+      };
+    }
+
+    const todayKey = this._todayKey();
+    if (date < todayKey) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: `Não é possível agendar em data passada. Use ${todayKey} ou posterior.`,
+      };
+    }
+
+    const slotDuration = DEFAULT_DURATION_MINUTES;
     const workingHours = [];
     const startMinutes = 9 * 60;
     const endMinutes = 17 * 60;
@@ -301,8 +558,15 @@ Se não foi você, ignore esta mensagem.`;
 
     const occupiedDocs = meetings.filter((m) => m.status !== 'cancelada');
     const occupiedSlots = occupiedDocs.map((m) => m.scheduledTime);
+    const now = new Date();
+    const isToday = date === todayKey;
 
     const availableSlots = workingHours.filter((slot) => {
+      if (isToday) {
+        const slotDateTime = toDateTime(date, slot);
+        if (!slotDateTime || slotDateTime <= now) return false;
+      }
+
       const candidateStart = toMinutes(slot);
       return !occupiedDocs.some((m) =>
         overlaps(
@@ -416,7 +680,7 @@ Se não foi você, ignore esta mensagem.`;
     };
   }
 
-  async updateMeeting(id, payload) {
+  async updateMeeting(id, payload, currentUser = null) {
     this._requireDb();
     const meetingRef = await this._findMeetingDocById(id);
 
@@ -446,6 +710,23 @@ Se não foi você, ignore esta mensagem.`;
       updatedAt: new Date().toISOString(),
     };
 
+    if (scheduledDate) {
+      if (!this._isValidDateKey(scheduledDate)) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: 'Formato de data inválido. Use YYYY-MM-DD.',
+        };
+      }
+      if (scheduledDate < this._todayKey()) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: 'Não é permitido reagendar para data passada.',
+        };
+      }
+    }
+
     if (scheduledDate) updates.scheduledDate = scheduledDate;
     if (scheduledTime) updates.scheduledTime = scheduledTime;
     if (duration) updates.duration = duration;
@@ -457,6 +738,25 @@ Se não foi você, ignore esta mensagem.`;
     if (clinicalRecord !== undefined) updates.clinicalRecord = clinicalRecord;
     if (transcriptionReview !== undefined) updates.transcriptionReview = transcriptionReview;
 
+    const hasOwnerMetadata = Boolean(
+      current.ownerUid ||
+      current.ownerEmail ||
+      current.owner?.uid ||
+      current.owner?.email ||
+      current.createdByUid ||
+      current.createdByEmail,
+    );
+    if (!hasOwnerMetadata && currentUser) {
+      const ownerInfo = this._buildOwnerInfo({}, currentUser);
+      updates.ownerUid = ownerInfo.ownerUid;
+      updates.ownerEmail = ownerInfo.ownerEmail;
+      updates.ownerRole = ownerInfo.ownerRole || null;
+      updates.ownerName = ownerInfo.ownerName || null;
+      updates.createdByUid = ownerInfo.ownerUid;
+      updates.createdByEmail = ownerInfo.ownerEmail;
+      updates.owner = ownerInfo.owner;
+    }
+
     const scheduleChanged =
       (scheduledDate && scheduledDate !== current.scheduledDate) ||
       (scheduledTime && scheduledTime !== current.scheduledTime) ||
@@ -465,14 +765,22 @@ Se não foi você, ignore esta mensagem.`;
     const calendarStatus = { success: true, message: null };
     try {
       if (scheduleChanged || (!current.meetLink && (scheduledDate || scheduledTime))) {
+        const attendeeEmails = this._extractAttendeeEmails({
+          studentEmail: current.studentEmail,
+          participants: current.participants || [],
+        });
         const calResp = await updateMeetEvent({
           eventId: current.calendarEventId,
-          summary: `Atendimento - ${current.studentName || 'Discente'}`,
+          summary:
+            current.sessionType === 'grupo'
+              ? `Sessão em grupo - ${current.groupTheme || current.title || 'Grupo'}`
+              : `Atendimento - ${current.studentName || current.title || 'Discente'}`,
           description: updates.notes ?? current.notes ?? '',
           date: scheduledDate || current.scheduledDate,
           time: scheduledTime || current.scheduledTime,
-          durationMinutes: duration || current.duration || 45,
+          durationMinutes: duration || current.duration || DEFAULT_DURATION_MINUTES,
           attendeeEmail: current.studentEmail,
+          attendeeEmails,
         });
 
         if (calResp?.success && (calResp.meetLink || calResp.eventId)) {

@@ -21,7 +21,7 @@ const toDateTimeString = (date, time) => {
   return `${date}T${time}:00`;
 };
 
-export async function createMeetEvent({ summary, description, date, time, durationMinutes = 45, attendeeEmail }) {
+export async function createMeetEvent({ summary, description, date, time, durationMinutes = 45, attendeeEmail, attendeeEmails = [] }) {
   if (!CALENDAR_ID) return { success: false, message: 'GOOGLE_CALENDAR_ID não configurado.' };
   const startStr = toDateTimeString(date, time);
   if (!startStr) return { success: false, message: 'Data/hora inválidas.' };
@@ -31,15 +31,24 @@ export async function createMeetEvent({ summary, description, date, time, durati
 
   try {
     const cal = calendarClient();
+    const normalizedAttendeeEmails = [
+      attendeeEmail,
+      ...attendeeEmails,
+    ]
+      .map((email) => (email || '').toString().trim().toLowerCase())
+      .filter(Boolean);
+    const uniqueAttendees = Array.from(new Set(normalizedAttendeeEmails));
+
     const resp = await cal.events.insert({
       calendarId: CALENDAR_ID,
       conferenceDataVersion: 1,
+      sendUpdates: 'all',
       requestBody: {
         summary: summary || 'Atendimento',
         description: description || '',
         start: { dateTime: start.toISOString(), timeZone: TIME_ZONE },
         end: { dateTime: end.toISOString(), timeZone: TIME_ZONE },
-        attendees: attendeeEmail ? [{ email: attendeeEmail }] : [],
+        attendees: uniqueAttendees.map((email) => ({ email })),
         conferenceData: {
           createRequest: {
             requestId: `meet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -63,10 +72,10 @@ export async function createMeetEvent({ summary, description, date, time, durati
   }
 }
 
-export async function updateMeetEvent({ eventId, summary, description, date, time, durationMinutes = 45, attendeeEmail }) {
+export async function updateMeetEvent({ eventId, summary, description, date, time, durationMinutes = 45, attendeeEmail, attendeeEmails = [] }) {
   if (!CALENDAR_ID) return { success: false, message: 'GOOGLE_CALENDAR_ID não configurado.' };
   if (!eventId) {
-    return createMeetEvent({ summary, description, date, time, durationMinutes, attendeeEmail });
+    return createMeetEvent({ summary, description, date, time, durationMinutes, attendeeEmail, attendeeEmails });
   }
   const startStr = toDateTimeString(date, time);
   if (!startStr) return { success: false, message: 'Data/hora inválidas.' };
@@ -76,16 +85,22 @@ export async function updateMeetEvent({ eventId, summary, description, date, tim
 
   try {
     const cal = calendarClient();
+    const combinedAttendeeEmails = [attendeeEmail, ...attendeeEmails]
+      .map((email) => (email || '').toString().trim().toLowerCase())
+      .filter(Boolean);
+    const uniqueAttendees = Array.from(new Set(combinedAttendeeEmails));
+
     const resp = await cal.events.patch({
       calendarId: CALENDAR_ID,
       eventId,
       conferenceDataVersion: 1,
+      sendUpdates: 'all',
       requestBody: {
         summary: summary || 'Atendimento',
         description: description || '',
         start: { dateTime: start.toISOString(), timeZone: TIME_ZONE },
         end: { dateTime: end.toISOString(), timeZone: TIME_ZONE },
-        attendees: attendeeEmail ? [{ email: attendeeEmail }] : [],
+        attendees: uniqueAttendees.map((email) => ({ email })),
       },
     });
 

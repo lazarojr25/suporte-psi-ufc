@@ -6,6 +6,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { auth, db } from '../../../services/firebase';
 import {
   dateKey,
+  getMeetingTitle,
   isEventRelatedToLoggedUser,
   parseDate,
   shouldShowSolicitacaoInAgenda,
@@ -19,6 +20,7 @@ export default function useAgendaData() {
   const [currentUser, setCurrentUser] = useState(() => auth.currentUser);
   const [meetings, setMeetings] = useState([]);
   const [solicitacoes, setSolicitacoes] = useState([]);
+  const [discentes, setDiscentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -29,9 +31,10 @@ export default function useAgendaData() {
     setLoading(true);
     setError(null);
     try {
-      const [meetingsResp, solicitacoesSnap] = await Promise.all([
+      const [meetingsResp, solicitacoesSnap, discentesSnap] = await Promise.all([
         apiService.getMeetings(),
         getDocs(collection(db, 'solicitacoesAtendimento')),
+        getDocs(collection(db, 'discentes')),
       ]);
 
       if (meetingsResp?.success && meetingsResp.data?.meetings) {
@@ -53,6 +56,12 @@ export default function useAgendaData() {
         };
       });
       setSolicitacoes(solicitacoesList);
+
+      const discentesList = discentesSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setDiscentes(discentesList);
     } catch (err) {
       console.error(err);
       setError('Falha ao carregar agenda.');
@@ -118,7 +127,7 @@ export default function useAgendaData() {
       day.meetings.push({
         type: 'meeting',
         id: m.id,
-        title: m.studentName || 'Sessão',
+        title: getMeetingTitle(m),
         time: m.scheduledTime || '',
         status: m.status,
         studentName: m.studentName,
@@ -142,7 +151,9 @@ export default function useAgendaData() {
         title: s.motivation || 'Solicitação',
         time: '',
         status: s.status || 'pendente',
-        studentName: s.nome || s.studentName,
+        studentName: s.name || s.nome || s.studentName,
+        studentEmail: s.email || s.studentEmail || null,
+        discenteId: s.discenteId || null,
         curso: s.curso,
         raw: s,
       });
@@ -205,6 +216,23 @@ export default function useAgendaData() {
       .slice(0, 5);
   }, [relatedMeetings]);
 
+  const pendingSolicitacoes = useMemo(
+    () =>
+      relatedSolicitacoes
+        .filter((s) => shouldShowSolicitacaoInAgenda(s.status))
+        .map((s) => ({
+          id: s.id,
+          name: s.name || s.nome || s.studentName || 'Aluno sem nome',
+          email: s.email || s.studentEmail || '',
+          discenteId: s.discenteId || null,
+          curso: s.curso || null,
+          status: s.status || 'pendente',
+          motivation: s.motivation || '',
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [relatedSolicitacoes],
+  );
+
   const changeMonth = (delta) => {
     const d = new Date(currentMonth);
     d.setMonth(currentMonth.getMonth() + delta);
@@ -212,6 +240,15 @@ export default function useAgendaData() {
   };
 
   const selectDate = (date) => setSelectedDate(date);
+
+  const createMeetingFromAgenda = async (payload) => {
+    const response = await apiService.createMeeting(payload);
+    if (!response?.success) {
+      throw new Error(response?.message || 'Não foi possível agendar a sessão.');
+    }
+    await loadData();
+    return response;
+  };
 
   return {
     currentMonth,
@@ -235,6 +272,9 @@ export default function useAgendaData() {
     filteredEvents,
     statusOptions,
     upcomingMeetings,
+    discentes,
+    pendingSolicitacoes,
+    createMeetingFromAgenda,
     changeMonth,
     loadingMessage: 'Carregando agenda...',
   };
