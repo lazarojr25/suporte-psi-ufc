@@ -268,10 +268,10 @@ class TranscriptionMediaJobService {
     let segDir = null;
     const originalPath = filePath;
     const baseName = path.basename(fileName, path.extname(fileName));
-    let shouldCleanupSource = false;
+    let shouldCleanupSource = Boolean(cleanupSource);
 
     try {
-      workDir = path.join(this.workDirectory, 'work', baseName);
+      workDir = path.join(this.workDirectory, baseName);
       segDir = path.join(workDir, 'segments');
       fs.mkdirSync(workDir, { recursive: true });
       console.log(`[transcription-job ${jobId}] Iniciando processamento de ${fileName}`);
@@ -412,7 +412,7 @@ class TranscriptionMediaJobService {
         discenteId: extraInfo?.discenteId || null,
         solicitacaoId: extraInfo?.solicitacaoId || null,
         transcriptFileName: `${path.basename(fileName, path.extname(fileName))}.txt`,
-        jobId: payload.jobId || null,
+        jobId: jobId || null,
         metadata: {
           originalFile: fileName,
           status: shouldMarkFailed ? 'erro_transcricao' : 'aguardando-retry',
@@ -445,6 +445,20 @@ class TranscriptionMediaJobService {
       { jobId: params.jobId || this._generateJobId() },
     );
     return jobId;
+  }
+
+  async runNowWithRetry(params, { updateMeetingSafe } = {}) {
+    const payload = {
+      ...params,
+      jobId: params.jobId || this._generateJobId(),
+      updateMeetingSafe,
+    };
+
+    const result = await this._runJobWithRetry(payload);
+    return {
+      jobId: payload.jobId,
+      result,
+    };
   }
 
   async reprocessAll({ discenteId, force = false }) {

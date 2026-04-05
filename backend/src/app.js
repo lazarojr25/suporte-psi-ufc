@@ -1,9 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { getUploadsDir, isServerlessRuntime } from './config/runtimePaths.js';
 
 
 // Importar rotas
@@ -23,14 +22,7 @@ process.on('uncaughtException', (err) => {
 });
 
 
-// Configurar __dirname para ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-
-
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
@@ -38,7 +30,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Criar diretório de uploads se não existir
-const uploadsDir = path.join(__dirname, '..', process.env.UPLOAD_DIR || 'uploads');
+const uploadsDir = getUploadsDir();
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -83,11 +75,8 @@ app.use('*', (req, res) => {
   res.status(404).json({ message: 'Rota não encontrada' });
 });
 
-// Iniciar servidor
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-  console.log(`Ambiente: ${process.env.NODE_ENV}`);
-  console.log(`Diretório de uploads: ${uploadsDir}`);
-});
+if (isServerlessRuntime) {
+  console.log(`Ambiente serverless detectado. Uploads temporários em: ${uploadsDir}`);
+}
 
 export default app;

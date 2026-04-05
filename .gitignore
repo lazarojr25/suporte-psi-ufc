@@ -56,3 +56,7 @@ frontend/.env
 frontend/.env.local
 frontend/.env.development
 frontend/.env.production
+
+# Firebase tooling
+.firebase/
+firebase-debug.log*

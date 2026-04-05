@@ -28,8 +28,11 @@ O repositório está dividido em duas aplicações:
 
 ```text
 suporte-psi-ufc/
-├── backend/   # API Node.js/Express, integrações externas, processamento de mídia e relatórios
-├── frontend/  # SPA React/Vite
+├── backend/   # API Express + entrypoint Firebase Functions
+├── frontend/  # SPA React/Vite (deploy em Firebase Hosting)
+├── firebase.json
+├── .firebaserc
+├── .github/workflows/
 └── README.md
 ```
 
@@ -110,7 +113,7 @@ No fluxo de mídia:
 - o upload é salvo temporariamente;
 - o arquivo é convertido para WAV 16 kHz mono;
 - mídias grandes podem ser segmentadas;
-- a transcrição é processada em segundo plano;
+- a transcrição é processada com estratégia compatível com o ambiente de execução;
 - o texto resultante passa por análise estruturada;
 - o texto completo é persistido no Firebase Storage;
 - os metadados e análise são persistidos no Firestore.
@@ -191,7 +194,7 @@ Rotas principais expostas pelo backend:
 ## Requisitos
 
 Antes de rodar o projeto, tenha instalado:
-- Node.js 18+ recomendado
+- Node.js 20 recomendado
 - npm
 - uma conta/projeto Firebase configurado
 - credenciais do Google Cloud para Calendar, Gmail e Gemini
@@ -232,11 +235,12 @@ npm run preview
 
 ### Observação importante sobre Firebase no frontend
 
-Atualmente a configuração do Firebase Web está definida diretamente em:
+O frontend aceita configuração por variáveis `VITE_*` (arquivo de exemplo em `frontend/.env.example`).
 
 - [`frontend/src/services/firebase.js`](./frontend/src/services/firebase.js)
+- [`frontend/.env.example`](./frontend/.env.example)
 
-Se você for adaptar o projeto para outro ambiente, esse arquivo deverá ser ajustado.
+Sem variáveis, o sistema usa os valores padrão já definidos no arquivo.
 
 ## Configuração do Backend
 
@@ -263,7 +267,7 @@ npm start
 
 ## Variáveis de Ambiente do Backend
 
-Crie um arquivo `backend/.env` com os valores necessários.
+Crie um arquivo `backend/.env` com os valores necessários (baseie-se em `backend/.env.example`).
 
 Exemplo:
 
@@ -286,6 +290,7 @@ GOOGLE_CALENDAR_ID=seu-calendar-id
 GOOGLE_CALENDAR_TIMEZONE=America/Fortaleza
 
 UPLOAD_DIR=uploads
+WORK_DIR=work
 
 TRANSCRIPTION_DEBOUNCE_MS=1200
 TRANSCRIPTION_MAX_RETRIES=2
@@ -293,6 +298,13 @@ TRANSCRIPTION_RETRY_BASE_MS=900
 TRANSCRIPTION_RETRY_JITTER_MS=250
 TRANSCRIPTION_RETRY_MAX_MS=8000
 REPROCESS_PARALLELISM=4
+
+FUNCTION_REGION=southamerica-east1
+FUNCTION_TIMEOUT_SECONDS=540
+FUNCTION_MEMORY=2GiB
+FUNCTION_MAX_INSTANCES=5
+FUNCTION_MIN_INSTANCES=0
+FUNCTION_CONCURRENCY=40
 ```
 
 ### Variáveis identificadas no código
@@ -300,6 +312,7 @@ REPROCESS_PARALLELISM=4
 - `NODE_ENV`
 - `PORT`
 - `UPLOAD_DIR`
+- `WORK_DIR`
 - `FIREBASE_PROJECT_ID`
 - `GOOGLE_CLOUD_PROJECT`
 - `GCLOUD_PROJECT`
@@ -320,6 +333,12 @@ REPROCESS_PARALLELISM=4
 - `TRANSCRIPTION_RETRY_JITTER_MS`
 - `TRANSCRIPTION_RETRY_MAX_MS`
 - `REPROCESS_PARALLELISM`
+- `FUNCTION_REGION`
+- `FUNCTION_TIMEOUT_SECONDS`
+- `FUNCTION_MEMORY`
+- `FUNCTION_MAX_INSTANCES`
+- `FUNCTION_MIN_INSTANCES`
+- `FUNCTION_CONCURRENCY`
 
 ## Google Gmail: geração/renovação do refresh token
 
@@ -377,30 +396,66 @@ De forma resumida:
 
 - `npm run dev`
 - `npm start`
+- `npm run lint`
 - `npm run gmail:refresh-token`
+
+## Deploy Firebase (Hosting + Functions)
+
+Configuração principal:
+- [`firebase.json`](./firebase.json)
+- [`backend/index.js`](./backend/index.js)
+
+Regras atuais:
+- frontend publicado em `Firebase Hosting` (`frontend/dist`);
+- `rewrites` de `/api/**` para a função `api` em `southamerica-east1`;
+- backend local continua disponível com `npm run dev`/`npm start`.
+
+Comandos úteis:
+
+```bash
+# build do frontend
+cd frontend && npm run build
+
+# deploy manual local (quando necessário)
+firebase deploy --only functions:api,hosting
+```
+
+### Pipeline CI/CD segura
+
+Workflows:
+- [`CI`](./.github/workflows/ci.yml): validação em PR e `main` (install, lint, build).
+- [`Deploy Firebase`](./.github/workflows/deploy-firebase.yml):
+  - `push` em `main` publica em `staging`;
+  - `workflow_dispatch` permite `staging` ou `production`;
+  - autenticação via OIDC (sem chave JSON estática);
+  - `smoke test` no endpoint `/api/health` após deploy.
+
+Variáveis/segredos esperados no GitHub:
+- `vars.FIREBASE_PROJECT_ID_STAGING`
+- `vars.FIREBASE_PROJECT_ID_PRODUCTION`
+- `secrets.GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `secrets.GCP_SERVICE_ACCOUNT`
 
 ## Observações de Desenvolvimento
 
 ### Porta da API
 
-O frontend consome a API em:
+O frontend usa por padrão:
+- `VITE_API_BASE_URL=/api`
 
-- `http://localhost:5001/api`
-
-Essa URL está definida em:
-
-- [`frontend/src/services/api.js`](./frontend/src/services/api.js)
-
-O backend, por padrão, usa:
-- `PORT=5000`
-
-Para rodar sem conflito, use uma destas abordagens:
-- definir `PORT=5001` no backend;
-- ou ajustar a URL base no frontend.
+Em desenvolvimento, o Vite faz proxy de `/api` para:
+- `http://localhost:5001` (configurável por `VITE_API_PROXY_TARGET`).
 
 ### Uploads e armazenamento
 
-Arquivos enviados ficam temporariamente no backend durante o processamento. O conteúdo final das transcrições é persistido no Firebase Storage e os metadados ficam no Firestore.
+Arquivos enviados ficam temporariamente no backend durante o processamento:
+- local: `uploads/` e `work/` no diretório de execução;
+- Cloud Functions: diretórios temporários em `/tmp`.
+
+O conteúdo final das transcrições é persistido no Firebase Storage e os metadados ficam no Firestore.
+
+Observação para Functions HTTP:
+- uploads de mídia por requisição têm limite prático menor que o ambiente local; a rota já aplica limite de 30MB em runtime serverless.
 
 ### IA como apoio, não substituição
 
