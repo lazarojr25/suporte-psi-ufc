@@ -27,6 +27,9 @@ export default function useMeetingDetalheData(meetingId) {
   const [notesSaveMsg, setNotesSaveMsg] = useState(null);
   const [notesSaveErr, setNotesSaveErr] = useState(null);
   const [transcriptionAnalysis, setTranscriptionAnalysis] = useState(null);
+  const [transcriptionContent, setTranscriptionContent] = useState('');
+  const [transcriptionFileName, setTranscriptionFileName] = useState('');
+  const [transcriptionFetchErr, setTranscriptionFetchErr] = useState(null);
   const [transcriptionReview, setTranscriptionReview] = useState({
     requiredByModel: false,
     sourceSummary: '',
@@ -100,9 +103,12 @@ export default function useMeetingDetalheData(meetingId) {
 
   const loadTranscriptionReviewData = async (meetingData) => {
     setTranscriptionAnalysis(null);
+    setTranscriptionFetchErr(null);
     setReviewChecklistMissing(null);
     const fileName = meetingData?.transcriptionFileName;
     if (!fileName) {
+      setTranscriptionContent('');
+      setTranscriptionFileName('');
       const nextReview = buildTranscriptionReview(null, meetingData?.transcriptionReview || null);
       setTranscriptionReview(nextReview);
       updateReviewChecklistMissing(nextReview);
@@ -111,7 +117,11 @@ export default function useMeetingDetalheData(meetingId) {
     try {
       const transcriptionRes = await apiService.getTranscription(fileName);
       const analysis = transcriptionRes?.data?.analysis || null;
+      const content = transcriptionRes?.data?.content || '';
       setTranscriptionAnalysis(analysis || null);
+      setTranscriptionContent(content);
+      setTranscriptionFileName(fileName);
+      setTranscriptionFetchErr(null);
       const persistedReview =
         meetingData?.transcriptionReview && typeof meetingData.transcriptionReview === 'object'
           ? meetingData.transcriptionReview
@@ -122,6 +132,9 @@ export default function useMeetingDetalheData(meetingId) {
     } catch (err) {
       console.error('Erro ao carregar análise de transcrição:', err);
       setTranscriptionAnalysis(null);
+      setTranscriptionContent('');
+      setTranscriptionFileName(fileName);
+      setTranscriptionFetchErr('Não foi possível carregar o conteúdo da transcrição.');
       const nextReview = buildTranscriptionReview(meetingData?.analysisHint || null, null);
       setTranscriptionReview(nextReview);
       updateReviewChecklistMissing(nextReview);
@@ -493,6 +506,9 @@ export default function useMeetingDetalheData(meetingId) {
     notesSaveErr,
     isClinicalSaveBlocked,
     transcriptionAnalysis,
+    transcriptionContent,
+    transcriptionFileName,
+    transcriptionFetchErr,
     transcriptionReview,
     setReviewField,
     setReviewChecklistItem,

@@ -112,7 +112,8 @@ No fluxo de mídia:
 - mídias grandes podem ser segmentadas;
 - a transcrição é processada em segundo plano;
 - o texto resultante passa por análise estruturada;
-- os resultados são persistidos no Firestore e em arquivo local.
+- o texto completo é persistido no Firebase Storage;
+- os metadados e análise são persistidos no Firestore.
 
 ## Estrutura de Dados
 
@@ -130,7 +131,7 @@ Coleções principais do Firestore:
 
 Arquivos auxiliares no projeto:
 - uploads temporários em `backend/uploads` ou diretório configurado;
-- transcrições formatadas em diretório local do backend.
+- transcrições completas no bucket Firebase Storage (`transcriptions/...`).
 
 Diagramas auxiliares do banco:
 - [modelo_banco_firestore_integral.md](./modelo_banco_firestore_integral.md)
@@ -197,7 +198,8 @@ Antes de rodar o projeto, tenha instalado:
 
 Observações:
 - o projeto usa `ffmpeg-static` e `ffprobe-static`, então normalmente não é necessário instalar FFmpeg globalmente;
-- o backend usa Firebase Admin via `applicationDefault()`, então é necessário configurar credenciais de aplicação padrão ou ambiente equivalente.
+- o backend usa Firebase Admin via `applicationDefault()`, então é necessário configurar credenciais de aplicação padrão ou ambiente equivalente;
+- para persistir transcrições completas, configure o bucket (`FIREBASE_STORAGE_BUCKET` ou `GCLOUD_STORAGE_BUCKET`).
 
 ## Configuração do Frontend
 
@@ -396,9 +398,9 @@ Para rodar sem conflito, use uma destas abordagens:
 - definir `PORT=5001` no backend;
 - ou ajustar a URL base no frontend.
 
-### Uploads e armazenamento local
+### Uploads e armazenamento
 
-Arquivos enviados ficam temporariamente no backend durante o processamento. O sistema também salva transcrições formatadas localmente para consulta e exportação.
+Arquivos enviados ficam temporariamente no backend durante o processamento. O conteúdo final das transcrições é persistido no Firebase Storage e os metadados ficam no Firestore.
 
 ### IA como apoio, não substituição
 

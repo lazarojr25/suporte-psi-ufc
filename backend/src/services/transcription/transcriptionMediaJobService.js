@@ -5,7 +5,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 
 import {
-  buildTranscriptBaseName,
+  buildTranscriptFileName,
   removeDir,
   removeIfExists,
   shouldReprocessEntry,
@@ -293,8 +293,11 @@ class TranscriptionMediaJobService {
       let finalFile;
       let partResults = [];
 
-      const finalBaseName = buildTranscriptBaseName(extraInfo, toSafeBase(baseName));
-      const finalFileName = `${finalBaseName}.txt`;
+      const finalFileName = buildTranscriptFileName(
+        extraInfo,
+        toSafeBase(baseName),
+        '.txt',
+      );
 
       if (wavSizeMB <= SEGMENT_THRESHOLD_MB) {
         console.log(
@@ -362,6 +365,7 @@ class TranscriptionMediaJobService {
       this._safeUpdateMeeting(updateMeetingSafe, extraInfo?.meetingId, {
         status: 'concluida',
         updatedAt: new Date().toISOString(),
+        transcriptionId: finalFile,
         transcriptionFileName: finalFile,
         ...(extraInfo?.discenteId ? { discenteId: extraInfo.discenteId } : {}),
         ...(extraInfo?.studentEmail ? { studentEmail: extraInfo.studentEmail } : {}),

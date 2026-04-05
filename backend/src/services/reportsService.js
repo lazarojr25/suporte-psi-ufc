@@ -2263,12 +2263,9 @@ class ReportsService {
 
   async getExportJsonData() {
     const transcriptions = await this.transcriptionService.listTranscriptions();
-
-    return {
-      exportedAt: new Date().toISOString(),
-      totalTranscriptions: transcriptions.length,
-      transcriptions: transcriptions.map((t) => {
-        const content = this.transcriptionService.getTranscription(t.fileName);
+    const transcriptionsWithContent = await Promise.all(
+      transcriptions.map(async (t) => {
+        const content = await this.transcriptionService.getTranscription(t.fileName);
         return {
           fileName: t.fileName,
           createdAt: t.createdAt,
@@ -2278,6 +2275,12 @@ class ReportsService {
           analysis: content ? content.analysis : null,
         };
       }),
+    );
+
+    return {
+      exportedAt: new Date().toISOString(),
+      totalTranscriptions: transcriptions.length,
+      transcriptions: transcriptionsWithContent,
     };
   }
 
@@ -2289,7 +2292,7 @@ class ReportsService {
     reportText += '==================================================\n\n';
 
     for (const t of allTranscriptions) {
-      const fullContent = this.transcriptionService.getTranscription(t.fileName);
+      const fullContent = await this.transcriptionService.getTranscription(t.fileName);
       if (!fullContent) continue;
 
       reportText += `--- Transcrição: ${t.fileName} ---\n`;

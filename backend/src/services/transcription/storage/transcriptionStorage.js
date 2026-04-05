@@ -1,56 +1,131 @@
-import fs from 'fs';
 import path from 'path';
 import {
-  SAFE_METADATA_FILE_NAME,
+  getAdminStorage,
+} from '../../../firebaseAdmin.js';
+import {
+  TRANSCRIPTIONS_STORAGE_PREFIX,
 } from '../constants/transcriptionConstants.js';
 
 export default class TranscriptionStorage {
-  constructor(transcriptionsDir) {
-    this.transcriptionsDir = transcriptionsDir;
-    this.metadataFile = path.join(transcriptionsDir, SAFE_METADATA_FILE_NAME);
-    this.ensureDir(this.transcriptionsDir);
+  constructor() {
+    this.storagePrefix = TRANSCRIPTIONS_STORAGE_PREFIX;
+    this.bucket = this._resolveBucket();
   }
 
-  ensureDir(dir) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+  _resolveBucket() {
+    try {
+      const storage = getAdminStorage();
+      const configuredBucket =
+        process.env.FIREBASE_STORAGE_BUCKET ||
+        process.env.GCLOUD_STORAGE_BUCKET ||
+        process.env.STORAGE_BUCKET;
+      return configuredBucket ? storage.bucket(configuredBucket) : storage.bucket();
+    } catch (error) {
+      console.error(
+        'Firebase Storage não disponível para persistir transcrições completas:',
+        error?.message,
+      );
+      return null;
     }
   }
 
-  loadMetadata() {
-    if (fs.existsSync(this.metadataFile)) {
-      const raw = fs.readFileSync(this.metadataFile, 'utf-8');
-      return JSON.parse(raw);
+  _assertStorageReady() {
+    if (!this.bucket || !this.bucket.name) {
+      throw new Error(
+        'Firebase Storage não inicializado. Configure FIREBASE_STORAGE_BUCKET e credenciais do Admin SDK.',
+      );
     }
-    return {};
   }
 
-  saveMetadata(metadata) {
-    fs.writeFileSync(this.metadataFile, JSON.stringify(metadata, null, 2), 'utf-8');
+  _buildCloudPath(fileName) {
+    const safeName = path.basename(fileName || '').replace(/[^\w.\-]+/g, '_');
+    return `${this.storagePrefix}/${safeName}`;
   }
 
-  filePath(fileName) {
-    return path.join(this.transcriptionsDir, fileName);
-  }
-
-  fileExists(fileName) {
-    return fs.existsSync(this.filePath(fileName));
-  }
-
-  readText(fileName) {
-    const filePath = this.filePath(fileName);
-    if (!fs.existsSync(filePath)) return null;
-    return fs.readFileSync(filePath, 'utf-8');
-  }
-
-  writeText(fileName, content) {
-    fs.writeFileSync(this.filePath(fileName), content, 'utf-8');
-  }
-
-  deleteFile(fileName) {
-    const filePath = this.filePath(fileName);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  _buildCloudCandidates(fileName, storagePath = null) {
+    const candidates = [];
+    if (storagePath && typeof storagePath === 'string') {
+      candidates.push(storagePath);
     }
+    candidates.push(this._buildCloudPath(fileName));
+    return Array.from(new Set(candidates.filter(Boolean)));
+  }
+
+  async fileExists(fileName, options = {}) {
+    this._assertStorageReady();
+    const candidates = this._buildCloudCandidates(fileName, options.storagePath);
+    for (const cloudPath of candidates) {
+      const [exists] = await this.bucket.file(cloudPath).exists();
+      if (exists) return true;
+    }
+    return false;
+  }
+
+  async readTextFromCloud(fileName, options = {}) {
+    this._assertStorageReady();
+    const candidates = this._buildCloudCandidates(fileName, options.storagePath);
+
+    for (const cloudPath of candidates) {
+      const file = this.bucket.file(cloudPath);
+      const [exists] = await file.exists();
+      if (!exists) continue;
+
+      const [contentBuffer] = await file.download();
+      const content = contentBuffer.toString('utf-8');
+      return {
+        content,
+        storagePath: cloudPath,
+      };
+    }
+
+    return null;
+  }
+
+  async readText(fileName, options = {}) {
+    const cloudResult = await this.readTextFromCloud(fileName, options);
+    if (cloudResult?.content) {
+      return cloudResult.content;
+    }
+    return null;
+  }
+
+  async writeText(fileName, content) {
+    this._assertStorageReady();
+
+    const storagePath = this._buildCloudPath(fileName);
+    const file = this.bucket.file(storagePath);
+    await file.save(content, {
+      resumable: false,
+      contentType: 'text/plain; charset=utf-8',
+      metadata: {
+        metadata: {
+          fileName,
+          uploadedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    return {
+      provider: 'firebase-storage',
+      bucket: this.bucket.name,
+      path: storagePath,
+      size: Buffer.byteLength(content || '', 'utf-8'),
+    };
+  }
+
+  async deleteFile(fileName, options = {}) {
+    this._assertStorageReady();
+    const candidates = this._buildCloudCandidates(fileName, options.storagePath);
+    await Promise.all(
+      candidates.map(async (cloudPath) => {
+        try {
+          await this.bucket.file(cloudPath).delete({ ignoreNotFound: true });
+        } catch (error) {
+          if (error?.code !== 404) {
+            throw error;
+          }
+        }
+      }),
+    );
   }
 }

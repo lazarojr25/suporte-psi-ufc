@@ -3,6 +3,7 @@ import {
   getAllTranscriptionsMetadata,
   deleteTranscriptionMetadata,
   getTranscriptionsByDiscenteId,
+  getTranscriptionMetadataByFileName,
   markReportsOverviewCacheDirty,
 } from '../../firestoreService.js';
 
@@ -12,76 +13,89 @@ const normalizeDiscenteId = (value) => {
 };
 
 export default class TranscriptionMetadataRepository {
-  constructor(storage) {
-    this.storage = storage;
-  }
-
   async list(filters = {}) {
     const { discenteId } = filters;
     const normalizedDiscenteId = normalizeDiscenteId(discenteId);
-    const normalizeAndMatchDiscenteId = (entry) =>
-      normalizeDiscenteId(entry?.metadata?.discenteId) === normalizedDiscenteId;
+    let firestoreMetadata = [];
 
-    try {
-      let firestoreMetadata = [];
-      if (discenteId) {
-        firestoreMetadata = await getTranscriptionsByDiscenteId(discenteId);
-      } else {
-        firestoreMetadata = await getAllTranscriptionsMetadata();
-      }
-      if (Array.isArray(firestoreMetadata) && firestoreMetadata.length > 0) {
-        return firestoreMetadata;
-      }
-    } catch (error) {
-      console.warn(
-        'Falha ao carregar metadados do Firestore, usando fallback local.',
-        error?.message,
-      );
+    if (discenteId) {
+      firestoreMetadata = await getTranscriptionsByDiscenteId(discenteId);
+    } else {
+      firestoreMetadata = await getAllTranscriptionsMetadata();
     }
 
-    const localMetadata = Object.values(this.storage.loadMetadata());
     if (!normalizedDiscenteId) {
-      return localMetadata;
+      return Array.isArray(firestoreMetadata) ? firestoreMetadata : [];
     }
 
-    return localMetadata.filter(normalizeAndMatchDiscenteId);
+    return (Array.isArray(firestoreMetadata) ? firestoreMetadata : []).filter(
+      (entry) =>
+        normalizeDiscenteId(entry?.discenteId || entry?.metadata?.discenteId) ===
+        normalizedDiscenteId,
+    );
   }
 
-  async saveCombinedMetadata(fileName, content, extraInfo, analysis, analysisStatus = 'ok', analysisError = null) {
-    const analysisMetadata = arguments[6] || {};
+  async getByFileName(fileName) {
+    if (!fileName) return null;
+
+    const firestoreEntry = await getTranscriptionMetadataByFileName(fileName);
+    return firestoreEntry || null;
+  }
+
+  async saveCombinedMetadata(
+    fileName,
+    content,
+    extraInfo,
+    analysis,
+    analysisStatus = 'ok',
+    analysisError = null,
+    analysisMetadata = {},
+    storageInfo = null,
+  ) {
+    const existingEntry = await this.getByFileName(fileName);
+    const nowIso = new Date().toISOString();
+    const discenteId = normalizeDiscenteId(extraInfo?.discenteId);
+    const meetingId = normalizeDiscenteId(extraInfo?.meetingId);
+    const solicitacaoId = normalizeDiscenteId(extraInfo?.solicitacaoId);
+    const storagePayload =
+      storageInfo && typeof storageInfo === 'object'
+        ? {
+            provider: storageInfo.provider || 'firebase-storage',
+            bucket: storageInfo.bucket || null,
+            path: storageInfo.path || null,
+          }
+        : null;
 
     const entry = {
       fileName,
-      size: content.length,
-      createdAt: new Date().toISOString(),
+      size:
+        typeof storageInfo?.size === 'number'
+          ? storageInfo.size
+          : Buffer.byteLength(content || '', 'utf-8'),
+      createdAt: existingEntry?.createdAt || nowIso,
+      updatedAt: nowIso,
+      transcriptionId: fileName,
+      discenteId,
+      meetingId,
+      solicitacaoId,
       metadata: extraInfo,
       analysis,
       analysisStatus,
       analysisError,
+      storage: storagePayload,
       analysisMetadata: {
         ...(analysisMetadata.model ? { model: analysisMetadata.model } : {}),
         ...(analysisMetadata.promptVersion
           ? { promptVersion: analysisMetadata.promptVersion }
           : {}),
-        analyzedAt: new Date().toISOString(),
+        analyzedAt: nowIso,
       },
     };
 
-    try {
-      const firestoreId = await saveTranscriptionMetadata(entry);
-      if (firestoreId) {
-        entry.firestoreId = firestoreId;
-      }
-    } catch (error) {
-      console.warn(
-        'Não foi possível salvar metadados no Firestore, usando fallback local.',
-        error?.message,
-      );
+    const firestoreId = await saveTranscriptionMetadata(entry);
+    if (firestoreId) {
+      entry.firestoreId = firestoreId;
     }
-
-    const metadata = this.storage.loadMetadata();
-    metadata[fileName] = entry;
-    this.storage.saveMetadata(metadata);
 
     markReportsOverviewCacheDirty();
 
@@ -89,16 +103,6 @@ export default class TranscriptionMetadataRepository {
   }
 
   async delete(fileName) {
-    const metadata = this.storage.loadMetadata();
-    if (metadata[fileName]) {
-      delete metadata[fileName];
-      this.storage.saveMetadata(metadata);
-    }
-
-    try {
-      await deleteTranscriptionMetadata(fileName);
-    } catch (error) {
-      console.warn('Falha ao remover metadados no Firestore:', error?.message);
-    }
+    await deleteTranscriptionMetadata(fileName);
   }
 }

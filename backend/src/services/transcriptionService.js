@@ -1,10 +1,8 @@
-import path from 'path';
 import dotenv from 'dotenv';
 import {
   ANALYSIS_STATUS,
   DEFAULT_MODEL,
   TRANSCRIPTION_SUMMARY_SEPARATOR,
-  getTranscriptionsDir,
 } from './transcription/constants/transcriptionConstants.js';
 import { formatTranscriptionDocument } from './transcription/utils/transcriptionFormatter.js';
 import TranscriptionStorage from './transcription/storage/transcriptionStorage.js';
@@ -17,10 +15,8 @@ dotenv.config();
 
 class TranscriptionService {
   constructor() {
-    // Diretório onde as transcrições são salvas (apenas o conteúdo)
-    this.transcriptionsDir = getTranscriptionsDir();
-    this.storage = new TranscriptionStorage(this.transcriptionsDir);
-    this.metadataRepository = new TranscriptionMetadataRepository(this.storage);
+    this.storage = new TranscriptionStorage();
+    this.metadataRepository = new TranscriptionMetadataRepository();
 
     this.aiClient = new TranscriptionAiClient({
       modelName: process.env.GEMINI_MODEL || DEFAULT_MODEL,
@@ -77,10 +73,13 @@ class TranscriptionService {
       return { success: false, message: 'fileName é obrigatório' };
     }
 
+    const metadataEntry = await this.metadataRepository.getByFileName(fileName);
+    const storagePath = metadataEntry?.storage?.path || null;
+
     try {
-      this.storage.deleteFile(fileName);
+      await this.storage.deleteFile(fileName, { storagePath });
     } catch (error) {
-      console.warn('Falha ao remover arquivo de transcrição local:', error?.message);
+      console.warn('Falha ao remover arquivo de transcrição no storage:', error?.message);
     }
 
     await this.metadataRepository.delete(fileName);
@@ -150,6 +149,7 @@ class TranscriptionService {
       extraInfo,
       normalizedAnalysis || {},
     );
+    const storageInfo = await this.storage.writeText(outputFileName, formatted);
     const metadata = await this.metadataRepository.saveCombinedMetadata(
       outputFileName,
       formatted,
@@ -161,9 +161,8 @@ class TranscriptionService {
         model: this.aiClient.modelName,
         promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
       },
+      storageInfo,
     );
-
-    this.storage.writeText(outputFileName, formatted);
 
     return {
       success: analysisStatus !== ANALYSIS_STATUS.FAILED,
@@ -197,6 +196,7 @@ class TranscriptionService {
       extraInfo,
       normalizedAnalysis || {},
     );
+    const storageInfo = await this.storage.writeText(outputFileName, formatted);
     const metadata = await this.metadataRepository.saveCombinedMetadata(
       outputFileName,
       formatted,
@@ -208,9 +208,8 @@ class TranscriptionService {
         model: this.aiClient.modelName,
         promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
       },
+      storageInfo,
     );
-
-    this.storage.writeText(outputFileName, formatted);
 
     return {
       success: analysisStatus !== ANALYSIS_STATUS.FAILED,
@@ -241,11 +240,12 @@ class TranscriptionService {
     }));
   }
 
-  getTranscription(fileName) {
-    const content = this.storage.readText(fileName);
+  async getTranscription(fileName) {
+    const metadata = await this.metadataRepository.getByFileName(fileName);
+    const storagePath = metadata?.storage?.path || null;
+    const content = await this.storage.readText(fileName, { storagePath });
     if (!content) return null;
 
-    const metadata = this.storage.loadMetadata()[fileName];
     return {
       fileName,
       content,
@@ -255,14 +255,14 @@ class TranscriptionService {
   }
 
   async reprocessTranscription(fileName) {
-    if (!this.storage.fileExists(fileName)) {
+    const entry = await this.metadataRepository.getByFileName(fileName);
+    const storagePath = entry?.storage?.path || null;
+    if (!(await this.storage.fileExists(fileName, { storagePath }))) {
       return { success: false, message: 'Arquivo de transcrição não encontrado' };
     }
 
-    const metadataAll = this.storage.loadMetadata();
-    const entry = metadataAll[fileName];
     const extraInfo = entry?.metadata || {};
-    const fullContent = this.storage.readText(fileName) || '';
+    const fullContent = (await this.storage.readText(fileName, { storagePath })) || '';
 
     const separatorIndex = fullContent.indexOf(TRANSCRIPTION_SUMMARY_SEPARATOR);
     const content =
@@ -309,6 +309,7 @@ class TranscriptionService {
 
     const normalizedAnalysis = this._normalizeAnalysis(analysis, analysisError);
     const formatted = formatTranscriptionDocument(content, extraInfo, normalizedAnalysis || {});
+    const storageInfo = await this.storage.writeText(fileName, formatted);
     await this.metadataRepository.saveCombinedMetadata(
       fileName,
       formatted,
@@ -320,8 +321,8 @@ class TranscriptionService {
         model: this.aiClient.modelName,
         promptVersion: TRANSCRIPTION_ANALYSIS_PROMPT_VERSION,
       },
+      storageInfo,
     );
-    this.storage.writeText(fileName, formatted);
 
     return {
       success: true,
