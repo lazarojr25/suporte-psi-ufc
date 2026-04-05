@@ -25,6 +25,13 @@ export default function SessoesList({
         {meetings.map((m) => {
           const statusNorm = normalizeStatus(m.status);
           const statusLabel = STATUS_LABELS[statusNorm] || statusNorm;
+          const isGroupSession = m.sessionType === 'grupo';
+          const title = isGroupSession
+            ? m.groupTheme || m.title || 'Sessão em grupo'
+            : m.studentName || m.title || 'Sessão sem nome';
+          const subtitle = isGroupSession
+            ? `${m.participants?.length || m.groupSize || 0} integrante(s)`
+            : (m.studentEmail || 'Email não informado');
           return (
             <button
               key={m.id}
@@ -35,11 +42,11 @@ export default function SessoesList({
               <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold">
-                    {(m.studentName || 'S').slice(0, 1).toUpperCase()}
+                    {(title || 'S').slice(0, 1).toUpperCase()}
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-900 leading-tight">
-                      {m.studentName || 'Sessão sem nome'}
+                      {title}
                     </p>
                     <p className="text-xs text-gray-500">
                       {m.scheduledDate || '---'} {m.scheduledTime ? `às ${m.scheduledTime}` : ''}
@@ -50,7 +57,7 @@ export default function SessoesList({
 
                 <div className="pl-12 sm:pl-0 sm:ml-[2.6rem] space-y-0.5">
                   <p className="text-xs text-gray-700 break-words">
-                    {m.studentEmail || 'Email não informado'}
+                    {subtitle}
                     {m.curso ? ` • ${m.curso}` : ''}
                   </p>
                   <p className="text-[11px] text-gray-500">ID: {m.id}</p>

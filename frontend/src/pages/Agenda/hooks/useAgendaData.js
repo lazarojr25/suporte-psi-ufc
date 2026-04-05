@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 
 import apiService from '../../../services/api';
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../../services/firebase';
+import { auth, db } from '../../../services/firebase';
 import {
   dateKey,
+  getMeetingTitle,
+  isEventRelatedToLoggedUser,
   parseDate,
   shouldShowSolicitacaoInAgenda,
 } from '../utils/agendaUtils';
@@ -14,8 +17,10 @@ const buildEmptyDay = () => ({ meetings: [], solicitacoesPendentes: [] });
 export default function useAgendaData() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(dateKey(new Date()));
+  const [currentUser, setCurrentUser] = useState(() => auth.currentUser);
   const [meetings, setMeetings] = useState([]);
   const [solicitacoes, setSolicitacoes] = useState([]);
+  const [discentes, setDiscentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -26,9 +31,10 @@ export default function useAgendaData() {
     setLoading(true);
     setError(null);
     try {
-      const [meetingsResp, solicitacoesSnap] = await Promise.all([
+      const [meetingsResp, solicitacoesSnap, discentesSnap] = await Promise.all([
         apiService.getMeetings(),
         getDocs(collection(db, 'solicitacoesAtendimento')),
+        getDocs(collection(db, 'discentes')),
       ]);
 
       if (meetingsResp?.success && meetingsResp.data?.meetings) {
@@ -50,6 +56,12 @@ export default function useAgendaData() {
         };
       });
       setSolicitacoes(solicitacoesList);
+
+      const discentesList = discentesSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setDiscentes(discentesList);
     } catch (err) {
       console.error(err);
       setError('Falha ao carregar agenda.');
@@ -60,6 +72,13 @@ export default function useAgendaData() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return unsubscribe;
   }, []);
 
   const monthLabel = currentMonth.toLocaleDateString('pt-BR', {
@@ -82,6 +101,16 @@ export default function useAgendaData() {
     return days;
   }, [currentMonth]);
 
+  const relatedMeetings = useMemo(
+    () => meetings.filter((meeting) => isEventRelatedToLoggedUser(meeting, currentUser)),
+    [meetings, currentUser],
+  );
+
+  const relatedSolicitacoes = useMemo(
+    () => solicitacoes.filter((solicitacao) => isEventRelatedToLoggedUser(solicitacao, currentUser)),
+    [solicitacoes, currentUser],
+  );
+
   const eventsByDay = useMemo(() => {
     const map = {};
     const ensureDay = (key) => {
@@ -91,14 +120,14 @@ export default function useAgendaData() {
       return map[key];
     };
 
-    meetings.forEach((m) => {
+    relatedMeetings.forEach((m) => {
       const key = m.scheduledDate || (m.dateTime && dateKey(new Date(m.dateTime)));
       if (!key) return;
       const day = ensureDay(key);
       day.meetings.push({
         type: 'meeting',
         id: m.id,
-        title: m.studentName || 'Sessão',
+        title: getMeetingTitle(m),
         time: m.scheduledTime || '',
         status: m.status,
         studentName: m.studentName,
@@ -111,7 +140,7 @@ export default function useAgendaData() {
       });
     });
 
-    solicitacoes.forEach((s) => {
+    relatedSolicitacoes.forEach((s) => {
       const key = s.createdAt ? dateKey(s.createdAt) : null;
       if (!key) return;
       if (!shouldShowSolicitacaoInAgenda(s.status)) return;
@@ -122,14 +151,16 @@ export default function useAgendaData() {
         title: s.motivation || 'Solicitação',
         time: '',
         status: s.status || 'pendente',
-        studentName: s.nome || s.studentName,
+        studentName: s.name || s.nome || s.studentName,
+        studentEmail: s.email || s.studentEmail || null,
+        discenteId: s.discenteId || null,
         curso: s.curso,
         raw: s,
       });
     });
 
     return map;
-  }, [meetings, solicitacoes]);
+  }, [relatedMeetings, relatedSolicitacoes]);
 
   const emptyDayEvents = buildEmptyDay();
   const selectedDayEvents = eventsByDay[selectedDate] || emptyDayEvents;
@@ -140,13 +171,13 @@ export default function useAgendaData() {
 
   const statusOptions = useMemo(() => {
     const set = new Set();
-    meetings.forEach((m) => m.status && set.add(m.status));
-    solicitacoes.forEach((s) => {
+    relatedMeetings.forEach((m) => m.status && set.add(m.status));
+    relatedSolicitacoes.forEach((s) => {
       if (!shouldShowSolicitacaoInAgenda(s.status)) return;
       if (s.status) set.add(s.status);
     });
     return ['all', ...Array.from(set)];
-  }, [meetings, solicitacoes]);
+  }, [relatedMeetings, relatedSolicitacoes]);
 
   const filteredEvents = useMemo(() => {
     return selectedEvents.filter((evt) => {
@@ -175,7 +206,7 @@ export default function useAgendaData() {
 
   const upcomingMeetings = useMemo(() => {
     const now = new Date();
-    return meetings
+    return relatedMeetings
       .map((m) => {
         const d = parseDate(m.dateTime) || parseDate(m.scheduledDate);
         return { ...m, _dateObj: d };
@@ -183,7 +214,24 @@ export default function useAgendaData() {
       .filter((m) => m._dateObj && m.status !== 'cancelada' && m._dateObj >= now)
       .sort((a, b) => a._dateObj - b._dateObj)
       .slice(0, 5);
-  }, [meetings]);
+  }, [relatedMeetings]);
+
+  const pendingSolicitacoes = useMemo(
+    () =>
+      relatedSolicitacoes
+        .filter((s) => shouldShowSolicitacaoInAgenda(s.status))
+        .map((s) => ({
+          id: s.id,
+          name: s.name || s.nome || s.studentName || 'Aluno sem nome',
+          email: s.email || s.studentEmail || '',
+          discenteId: s.discenteId || null,
+          curso: s.curso || null,
+          status: s.status || 'pendente',
+          motivation: s.motivation || '',
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [relatedSolicitacoes],
+  );
 
   const changeMonth = (delta) => {
     const d = new Date(currentMonth);
@@ -193,9 +241,19 @@ export default function useAgendaData() {
 
   const selectDate = (date) => setSelectedDate(date);
 
+  const createMeetingFromAgenda = async (payload) => {
+    const response = await apiService.createMeeting(payload);
+    if (!response?.success) {
+      throw new Error(response?.message || 'Não foi possível agendar a sessão.');
+    }
+    await loadData();
+    return response;
+  };
+
   return {
     currentMonth,
     monthLabel,
+    currentUser,
     selectedDate,
     setCurrentMonth,
     selectDate,
@@ -214,6 +272,9 @@ export default function useAgendaData() {
     filteredEvents,
     statusOptions,
     upcomingMeetings,
+    discentes,
+    pendingSolicitacoes,
+    createMeetingFromAgenda,
     changeMonth,
     loadingMessage: 'Carregando agenda...',
   };

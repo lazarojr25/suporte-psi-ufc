@@ -7,6 +7,14 @@ export default function MeetingDetalheInfoCard({
   onOpenSolicitacao,
   containerClassName = '',
 }) {
+  const isGroupSession = meeting.sessionType === 'grupo';
+  const title = isGroupSession
+    ? meeting.groupTheme || meeting.title || 'Sessão em grupo'
+    : meeting.studentName || '---';
+  const contact = isGroupSession
+    ? `${meeting.participants?.length || meeting.groupSize || 0} integrante(s)`
+    : meeting.studentEmail || '---';
+
   return (
     <div className={`bg-white rounded-xl shadow p-4 sm:p-5 ${containerClassName}`}>
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -18,12 +26,14 @@ export default function MeetingDetalheInfoCard({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-sm">
         <div className="space-y-1">
-          <p className="text-xs text-gray-500 uppercase">Discente</p>
+          <p className="text-xs text-gray-500 uppercase">
+            {isGroupSession ? 'Sessão em grupo' : 'Discente'}
+          </p>
           <p className="text-base font-semibold text-gray-900 break-words">
-            {meeting.studentName || '---'}
+            {title}
           </p>
           <p className="text-sm text-gray-700 break-words">
-            {meeting.studentEmail || '---'}
+            {contact}
           </p>
         </div>
 

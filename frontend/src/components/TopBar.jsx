@@ -35,7 +35,7 @@ export default function TopBar({ user, role }) {
 
   return (
     <header className="shrink-0 bg-white border-b sticky top-0 z-30">
-      <div className="max-w-6xl mx-auto px-4">
+      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8">
         <div className="h-14 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <span className="font-bold text-gray-900">

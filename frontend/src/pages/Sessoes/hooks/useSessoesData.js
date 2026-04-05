@@ -46,8 +46,22 @@ export default function useSessoesData() {
         const name = (meeting.studentName || '').toLowerCase();
         const email = (meeting.studentEmail || '').toLowerCase();
         const curso = (meeting.curso || '').toLowerCase();
+        const groupTheme = (meeting.groupTheme || meeting.title || '').toLowerCase();
+        const participants = Array.isArray(meeting.participants)
+          ? meeting.participants
+              .map((participant) =>
+                `${participant?.name || ''} ${participant?.email || ''}`.toLowerCase(),
+              )
+              .join(' ')
+          : '';
 
-        return matchStatus && (name.includes(q) || email.includes(q) || curso.includes(q));
+        return matchStatus && (
+          name.includes(q) ||
+          email.includes(q) ||
+          curso.includes(q) ||
+          groupTheme.includes(q) ||
+          participants.includes(q)
+        );
       })
       .sort((a, b) => {
         const da = a.dateTime ? new Date(a.dateTime) : new Date(a.createdAt || 0);

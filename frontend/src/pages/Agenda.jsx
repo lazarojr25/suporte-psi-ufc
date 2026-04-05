@@ -1,14 +1,17 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import useAgendaData from './Agenda/hooks/useAgendaData';
 import AgendaHeader from './Agenda/components/AgendaHeader';
 import AgendaCalendar from './Agenda/components/AgendaCalendar';
 import AgendaSidebar from './Agenda/components/AgendaSidebar';
+import AgendaScheduleModal from './Agenda/components/AgendaScheduleModal';
+import { isDateOnOrAfterToday } from './Agenda/utils/agendaUtils';
 
 export default function Agenda() {
   const navigate = useNavigate();
-  const sidebarRef = useRef(null);
+  const dailyPanelRef = useRef(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
   const {
     monthLabel,
@@ -30,7 +33,12 @@ export default function Agenda() {
     setStatusFilter,
     selectDate,
     setSelectedEvent,
+    discentes,
+    pendingSolicitacoes,
+    createMeetingFromAgenda,
   } = useAgendaData();
+
+  const canScheduleSelectedDate = isDateOnOrAfterToday(selectedDate);
 
   const handleSelectDate = (dateKey, hasEvents) => {
     selectDate(dateKey);
@@ -41,38 +49,61 @@ export default function Agenda() {
       window.matchMedia('(max-width: 767px)').matches
     ) {
       window.setTimeout(() => {
-        sidebarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        dailyPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 80);
     }
+  };
+
+  const handleScheduleFromAgenda = async (payload) => {
+    const response = await createMeetingFromAgenda(payload);
+    if (response?.calendar?.success === false) {
+      alert(
+        response?.calendar?.message
+          ? `Sessão agendada, mas não foi possível criar o evento no Google Calendar: ${response.calendar.message}`
+          : 'Sessão agendada, mas não foi possível criar o evento no Google Calendar.',
+      );
+    }
+    return response;
+  };
+
+  const handleOpenScheduleModal = (targetDate = selectedDate) => {
+    if (!isDateOnOrAfterToday(targetDate)) return;
+    if (targetDate && targetDate !== selectedDate) {
+      selectDate(targetDate);
+    }
+    setScheduleModalOpen(true);
   };
 
   return (
     <div className="h-full w-full min-h-0 flex flex-col gap-4 overflow-hidden">
       <div className="bg-white rounded-xl shadow p-4">
-        <AgendaHeader
-          monthLabel={monthLabel}
-          currentMonthPrev={() => changeMonth(-1)}
-          currentMonthNext={() => changeMonth(1)}
-        />
+        <AgendaHeader />
       </div>
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
       {loading && <p className="text-sm text-gray-500">Carregando agenda...</p>}
 
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] gap-4 items-stretch flex-1 min-h-0 overflow-y-auto md:overflow-hidden">
-        <div className="min-h-0 md:h-full">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] gap-4 items-stretch flex-1 min-h-0 overflow-y-auto xl:overflow-hidden">
+        <div className="min-h-0 xl:h-full">
           <AgendaCalendar
+            monthLabel={monthLabel}
+            currentMonthPrev={() => changeMonth(-1)}
+            currentMonthNext={() => changeMonth(1)}
             calendarDays={calendarDays}
             currentMonth={currentMonth}
             selectedDate={selectedDate}
             eventsByDay={eventsByDay}
             emptyDayEvents={{ meetings: [], solicitacoesPendentes: [] }}
             onSelectDate={handleSelectDate}
+            canScheduleSelectedDate={canScheduleSelectedDate}
+            onOpenScheduleModal={handleOpenScheduleModal}
           />
         </div>
 
-        <div ref={sidebarRef} className="min-h-0 md:h-full">
+        <div ref={dailyPanelRef} className="min-h-0 xl:h-full">
           <AgendaSidebar
+            isMainView
+            emptyMessage="Nenhum evento relacionado ao seu usuário nesta data."
             selectedDate={selectedDate}
             selectedDayEvents={selectedDayEvents}
             typeFilter={typeFilter}
@@ -88,6 +119,15 @@ export default function Agenda() {
           />
         </div>
       </div>
+
+      <AgendaScheduleModal
+        open={scheduleModalOpen}
+        selectedDate={selectedDate}
+        discentes={discentes}
+        pendingSolicitacoes={pendingSolicitacoes}
+        onClose={() => setScheduleModalOpen(false)}
+        onSchedule={handleScheduleFromAgenda}
+      />
     </div>
   );
 }

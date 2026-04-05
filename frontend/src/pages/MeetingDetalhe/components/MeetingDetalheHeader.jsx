@@ -1,11 +1,15 @@
 export default function MeetingDetalheHeader({ meeting, statusBadgeMeta, onBack }) {
+  const title = meeting.sessionType === 'grupo'
+    ? meeting.groupTheme || meeting.title || 'Sessão em grupo'
+    : meeting.studentName || meeting.title || 'Sessão sem nome';
+
   return (
     <div className="bg-white rounded-xl shadow p-4 space-y-3 sm:flex sm:items-start sm:justify-between sm:gap-3 sm:space-y-0">
       <div className="min-w-0 space-y-1">
         <p className="text-xs uppercase tracking-wide text-gray-500">Sessão</p>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <h1 className="text-2xl font-bold text-gray-900 break-words">
-            {meeting.studentName || 'Sessão sem nome'}
+            {title}
           </h1>
           {statusBadgeMeta && (
             <span className={statusBadgeMeta.className}>{statusBadgeMeta.text}</span>

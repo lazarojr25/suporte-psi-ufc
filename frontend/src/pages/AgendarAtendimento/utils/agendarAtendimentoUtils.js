@@ -15,12 +15,15 @@ export const getAvailableDates = () => {
   const dates = [];
   const today = new Date();
 
-  for (let i = 1; i <= DIAS_FUTUROS; i += 1) {
+  for (let i = 0; i <= DIAS_FUTUROS; i += 1) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
 
     if (date.getDay() >= 1 && date.getDay() <= 5) {
-      dates.push(date.toISOString().split('T')[0]);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      dates.push(`${year}-${month}-${day}`);
     }
   }
 
@@ -43,10 +46,20 @@ export const buildMeetingData = ({
   observacoes,
 }) => ({
   solicitacaoId,
+  sessionType: 'individual',
   studentName: solicitacao?.name,
   studentEmail: solicitacao?.email,
   discenteId: solicitacao?.discenteId || null,
   curso: solicitacao?.curso || null,
+  participants: [
+    {
+      discenteId: solicitacao?.discenteId || null,
+      name: solicitacao?.name || null,
+      email: solicitacao?.email || null,
+      studentId: solicitacao?.studentId || null,
+      curso: solicitacao?.curso || null,
+    },
+  ],
   scheduledDate: selectedDate,
   scheduledTime: selectedTime,
   duration: DEFAULT_MEETING_DURATION,

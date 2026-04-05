@@ -4,6 +4,9 @@ import {
   setReportsOverviewCache,
 } from './firestoreService.js';
 
+const MEETINGS_COLLECTION = 'encontros';
+const LEGACY_MEETINGS_COLLECTIONS = ['meetings'];
+
 class ReportsService {
   constructor(db, transcriptionService) {
     this.db = db;
@@ -191,10 +194,12 @@ class ReportsService {
   async _buildOverviewData({ from = null, to = null } = {}) {
     const all = this.transcriptionService.listTranscriptionsWithMetadata();
     const solicitacoes = this._loadSolicitacoes();
+    const meetingsPromise = this._loadMeetings();
 
-    const [allTranscriptions, allSolicitacoes] = await Promise.all([
+    const [allTranscriptions, allSolicitacoes, allMeetings] = await Promise.all([
       all,
       solicitacoes,
+      meetingsPromise,
     ]);
 
     const { fromDate, toDate } = this._buildDateRange(from, to);
@@ -210,6 +215,9 @@ class ReportsService {
     );
     const filteredSolicitacoes = allSolicitacoes.filter((item) =>
       inRange(this._toDate(item?.createdAt)),
+    );
+    const filteredMeetings = allMeetings.filter((meeting) =>
+      inRange(this._meetingDateForRange(meeting)),
     );
 
     const totalTranscriptions = filteredTranscriptions.length;
@@ -671,6 +679,63 @@ class ReportsService {
       totalTranscriptions,
     );
 
+    const attendanceByOwnerMap = new Map();
+    filteredMeetings.forEach((meeting) => {
+      const owner = this._extractMeetingOwner(meeting);
+      const current = attendanceByOwnerMap.get(owner.key) || {
+        ...owner,
+        scheduledMinutes: 0,
+        completedMinutes: 0,
+        scheduledSessions: 0,
+        completedSessions: 0,
+      };
+      const status = this._normalizeStatus(meeting.status);
+      const durationMinutes = Number(meeting.duration || 45) || 45;
+
+      if (status === 'agendada') {
+        current.scheduledMinutes += durationMinutes;
+        current.scheduledSessions += 1;
+      }
+
+      if (status === 'concluida') {
+        current.completedMinutes += durationMinutes;
+        current.completedSessions += 1;
+      }
+
+      attendanceByOwnerMap.set(owner.key, current);
+    });
+
+    const attendanceHoursByUser = Array.from(attendanceByOwnerMap.values())
+      .map((entry) => ({
+        ...entry,
+        scheduledHours: Number((entry.scheduledMinutes / 60).toFixed(2)),
+        completedHours: Number((entry.completedMinutes / 60).toFixed(2)),
+      }))
+      .sort((a, b) => {
+        if (b.completedHours !== a.completedHours) {
+          return b.completedHours - a.completedHours;
+        }
+        if (b.scheduledHours !== a.scheduledHours) {
+          return b.scheduledHours - a.scheduledHours;
+        }
+        return (a.label || '').localeCompare(b.label || '');
+      });
+
+    const attendanceHoursTotals = attendanceHoursByUser.reduce(
+      (acc, item) => ({
+        scheduledHours: Number((acc.scheduledHours + item.scheduledHours).toFixed(2)),
+        completedHours: Number((acc.completedHours + item.completedHours).toFixed(2)),
+        scheduledSessions: acc.scheduledSessions + item.scheduledSessions,
+        completedSessions: acc.completedSessions + item.completedSessions,
+      }),
+      {
+        scheduledHours: 0,
+        completedHours: 0,
+        scheduledSessions: 0,
+        completedSessions: 0,
+      },
+    );
+
     return {
       overview: {
         totalTranscriptions,
@@ -680,6 +745,10 @@ class ReportsService {
         sentimentsAvg,
         conversionRate: conversionRateTotal,
         conversionDeltaMoM: conversionDeltaMoMTotal,
+      },
+      attendanceHoursByUser: {
+        users: attendanceHoursByUser,
+        totals: attendanceHoursTotals,
       },
       qualityFlags,
       riskSignals: {
@@ -933,6 +1002,80 @@ class ReportsService {
           : new Date(value);
 
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  _normalizeStatus(status) {
+    return (status || '')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  _meetingDateForRange(meeting = {}) {
+    if (meeting.dateTime) {
+      const fromDateTime = this._toDate(meeting.dateTime);
+      if (fromDateTime) return fromDateTime;
+    }
+    if (meeting.scheduledDate && meeting.scheduledTime) {
+      const fromScheduled = this._toDate(`${meeting.scheduledDate}T${meeting.scheduledTime}:00`);
+      if (fromScheduled) return fromScheduled;
+    }
+    if (meeting.scheduledDate) {
+      const fromScheduledDate = this._toDate(`${meeting.scheduledDate}T00:00:00`);
+      if (fromScheduledDate) return fromScheduledDate;
+    }
+    return this._toDate(meeting.createdAt);
+  }
+
+  _extractMeetingOwner(meeting = {}) {
+    const ownerUid =
+      this._safeToString(meeting.ownerUid) ||
+      this._safeToString(meeting.owner?.uid) ||
+      this._safeToString(meeting.createdByUid);
+    const ownerEmail =
+      this._safeToString(meeting.ownerEmail) ||
+      this._safeToString(meeting.owner?.email) ||
+      this._safeToString(meeting.createdByEmail);
+    const ownerName =
+      this._safeToString(meeting.ownerName) ||
+      this._safeToString(meeting.owner?.name) ||
+      null;
+    const key = ownerUid || ownerEmail || 'sem_proprietario';
+    const label = ownerName || ownerEmail || ownerUid || 'Sem proprietário';
+    return {
+      key,
+      label,
+      ownerUid: ownerUid || null,
+      ownerEmail: ownerEmail || null,
+      ownerName: ownerName || null,
+    };
+  }
+
+  async _loadMeetings() {
+    if (!this.db) return [];
+    const collections = [MEETINGS_COLLECTION, ...LEGACY_MEETINGS_COLLECTIONS];
+    const map = new Map();
+    try {
+      const snapshots = await Promise.all(
+        collections.map((collectionName) => this.db.collection(collectionName).get()),
+      );
+      snapshots.forEach((snapshot) => {
+        snapshot.docs.forEach((doc) => {
+          if (map.has(doc.id)) return;
+          const data = doc.data() || {};
+          map.set(doc.id, {
+            id: doc.id,
+            ...data,
+          });
+        });
+      });
+      return Array.from(map.values());
+    } catch (err) {
+      console.warn('Falha ao carregar encontros para relatório:', err?.message);
+      return [];
+    }
   }
 
   _extractTextList(values = []) {
@@ -1340,6 +1483,7 @@ class ReportsService {
       concentration,
       alerts,
       overview,
+      attendanceHoursByUser,
       highlights,
       timeline,
       solicitacoes,
@@ -1428,6 +1572,19 @@ class ReportsService {
     lines.push(`- Últimos 90 dias: ${formatWindow(timeWindows?.last90Days)}`);
     lines.push(`- Últimos 6 meses: ${formatWindow(timeWindows?.last6Months)}`);
     lines.push(`- Semestre atual: ${formatWindow(timeWindows?.currentSemester)}`);
+
+    if (attendanceHoursByUser?.users?.length) {
+      lines.push('');
+      lines.push('> Horas de atendimento por usuário (agendadas e concluídas)');
+      attendanceHoursByUser.users.forEach((entry) => {
+        lines.push(
+          `- ${entry.label}: ${entry.scheduledHours}h agendadas (${entry.scheduledSessions} sessão(ões)) | ${entry.completedHours}h concluídas (${entry.completedSessions} sessão(ões))`,
+        );
+      });
+      lines.push(
+        `- Total geral: ${attendanceHoursByUser.totals?.scheduledHours || 0}h agendadas | ${attendanceHoursByUser.totals?.completedHours || 0}h concluídas`,
+      );
+    }
 
     if (overview.sentimentsAvg) {
       lines.push('- Sentimento médio:');
@@ -1536,6 +1693,7 @@ class ReportsService {
       riskSignals,
       narratives,
       overview,
+      attendanceHoursByUser,
       highlights,
       timeline,
       solicitacoes,
@@ -1611,6 +1769,21 @@ class ReportsService {
             `${entry.periodLabel}: ${entry.solicitacoes} solicitações | ${entry.atendimentosConcluidos} atendimentos`,
           );
         });
+      }
+
+      if (attendanceHoursByUser?.users?.length) {
+        doc.moveDown();
+        doc.fontSize(14).text('Horas de atendimento por usuário', { underline: true });
+        doc.moveDown(0.3);
+        attendanceHoursByUser.users.forEach((entry) => {
+          doc.fontSize(12).text(
+            `${entry.label}: ${entry.scheduledHours}h agendadas (${entry.scheduledSessions}) | ${entry.completedHours}h concluídas (${entry.completedSessions})`,
+          );
+        });
+        doc.moveDown(0.2);
+        doc.fontSize(12).text(
+          `Total geral: ${attendanceHoursByUser.totals?.scheduledHours || 0}h agendadas | ${attendanceHoursByUser.totals?.completedHours || 0}h concluídas`,
+        );
       }
 
       doc.moveDown();
